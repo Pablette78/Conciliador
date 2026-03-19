@@ -9,29 +9,13 @@ import threading
 from datetime import datetime
 
 from core.models import Movimiento, DatosExtracto
-from core.parsers.santander import SantanderParser
 from core.factory import FabricaParsers
 from core.engine import MotorConciliacion
 from core.utils import combinar_extractos, combinar_mayores
 from parser_excel import parsear_excel
 from generador_excel import generar_excel
-import re
-
-# Parsers legados (en proceso de refactorización)
-from parser_banco_ciudad import parsear_pdf as parsear_ciudad
-from parser_comafi import parsear_pdf as parsear_comafi
-from parser_icbc import parsear_pdf as parsear_icbc
-from parser_provincia import parsear_pdf as parsear_provincia
 from detector_banco import detectar_banco_con_confianza
-
-PARSERS_BANCO = {
-    "Banco Ciudad":    parsear_ciudad,
-    "Banco Comafi":    parsear_comafi,
-    "Banco ICBC":      parsear_icbc,
-    "Banco Provincia": parsear_provincia,
-    "Banco Santander": None, # Se maneja vía FabricaParsers (refactorizado)
-    "Banco Galicia":   None, # Se maneja vía FabricaParsers (refactorizado)
-}
+import re
 
 COLOR_FONDO   = '#f0f4f8'
 COLOR_HEADER  = '#2F5496'
@@ -143,82 +127,10 @@ class App:
         self.banco_var = tk.StringVar(value="— auto —")
         self.combo_banco = ttk.Combobox(
             frame_banco, textvariable=self.banco_var,
-            values=["— auto —"] + list(PARSERS_BANCO.keys()),
+            values=["— auto —", "Banco Santander", "Banco Galicia", "Banco BBVA", "Banco Bancor", 
+                    "Banco Provincia", "Banco Nación", "Banco Credicoop", "Banco HSBC", 
+                    "Banco ICBC", "Banco Macro", "Banco Ciudad", "Banco Comafi"],
             state='readonly', font=('Arial', 10), width=22)
-        self.combo_banco.pack(side='left')
-
-        self.lista_mayores = ListaArchivos(
-            main,
-            titulo="Mayor contable  (Excel — uno o varios)",
-            filetypes=[("Excel", "*.xls *.xlsx *.xlsm"), ("Todos", "*.*")],
-        )
-        self.lista_mayores.pack(fill='x', pady=(0, 12))
-
-        ttk.Separator(main, orient='horizontal').pack(fill='x', pady=6)
-
-        # ── Botón conciliar ───────────────────────────────────────────────────
-        self.btn = tk.Button(
-            main, text="  CONCILIAR  ", command=self._conciliar,
-            font=('Arial', 13, 'bold'), bg=COLOR_VERDE, fg='white',
-            relief='flat', padx=20, pady=9, cursor='hand2',
-            activebackground='#1B5E20')
-        self.btn.pack(pady=(4, 8))
-
-        self.progress = ttk.Progressbar(main, mode='indeterminate')
-        self.progress.pack(fill='x')
-
-        # ── Log ───────────────────────────────────────────────────────────────
-        self.log = tk.Text(main, height=9, font=('Consolas', 8),
-                           bg='#1e1e1e', fg='#d4d4d4',
-                           state='disabled', relief='flat', padx=8, pady=6)
-        self.log.pack(fill='x', pady=(10, 0))
-
-        # Colores de log
-        self.log.tag_config('ok',    foreground='#89d185')
-        self.log.tag_config('warn',  foreground='#f5c842')
-        self.log.tag_config('error', foreground='#f48771')
-        self.log.tag_config('info',  foreground='#9cdcfe')
-
-    # ─── Helpers ──────────────────────────────────────────────────────────────
-
-    def _log(self, msg, tag=None):
-        self.log.configure(state='normal')
-        self.log.insert('end', msg + '\n', tag or '')
-        self.log.see('end')
-        self.log.configure(state='disabled')
-        self.root.update_idletasks()
-
-    def _autodetectar_banco(self, ruta):
-        banco, confianza = detectar_banco_con_confianza(ruta)
-        nombre = os.path.basename(ruta)
-        if banco:
-            sufijo = "" if confianza == "alta" else " (probable)"
-            self._log(f"均衡 {nombre} → {banco}{sufijo}", 'info')
-            # Si el combo está en "auto" o vacío, pre-seleccionar
-            if self.banco_var.get() in ("— auto —", ""):
-                self.banco_var.set(banco)
-        else:
-            self._log(f"❓ {nombre} → banco no detectado, seleccioná manualmente", 'warn')
-
-    def _convertir_datos_legados(self, datos_raw, nombre_banco) -> DatosExtracto:
-        """Convierte el diccionario de los parsers antiguos a DatosExtracto."""
-        movs = []
-        for m in datos_raw.get('movimientos', []):
-            movs.append(Movimiento(
-                fecha=m['fecha'],
-                concepto=m['concepto'],
-                debito=m.get('debito', 0.0),
-                credito=m.get('credito', 0.0),
-                descripcion=m.get('descripcion', ''),
-                tipo=m.get('tipo', 'OTRO')
-            ))
-        return DatosExtracto(
-            banco=nombre_banco,
-            titular=datos_raw.get('titular', ''),
-            movimientos=movs,
-            saldo_anterior=datos_raw.get('saldo_anterior', 0.0),
-            saldo_final=datos_raw.get('saldo_final', 0.0)
-        )
 
     # ─── Conciliación ─────────────────────────────────────────────────────────
 
@@ -260,25 +172,14 @@ class App:
                     self._log(f"   {nombre} -> No se pudo determinar el banco. Saltando.", 'error')
                     continue
 
-                # 2. Intentar obtener parser refactorizado (Factory)
+                # 2. Intentar obtener parser (Factory)
                 parser = FabricaParsers.obtener_parser(banco_final)
                 
                 if parser:
                     datos = parser.parse(ruta)
-                elif banco_final == "Banco Santander":
-                    # Si no hay parser en factory pero es Santander, algo falló en factory
-                    # pero lo intentamos instanciar directo como última opción
-                    datos = SantanderParser().parse(ruta)
                 else:
-                    # 3. Fallback a parsers legados
-                    parse_func = PARSERS_BANCO.get(banco_final)
-                    if parse_func:
-                        self._log(f"   {nombre} -> Usando parser legado para {banco_final}", 'warn')
-                        datos_raw = parse_func(ruta)
-                        datos = self._convertir_datos_legados(datos_raw, banco_final)
-                    else:
-                        self._log(f"   {nombre} -> No hay parser disponible para {banco_final}", 'error')
-                        continue
+                    self._log(f"   {nombre} -> No hay parser disponible para {banco_final}", 'error')
+                    continue
                 
                 self._log(
                     f"   {nombre}  [{datos.banco}]  "
