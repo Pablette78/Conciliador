@@ -13,6 +13,7 @@ from .parsers.patagonia import PatagoniaParser
 from .parsers.supervielle import SupervielleParser
 from .parsers.ciudad import CiudadParser
 from .parsers.comafi import ComafiParser
+from .parsers.arca import ARCAParser
 
 class FabricaParsers:
     @staticmethod
@@ -45,6 +46,8 @@ class FabricaParsers:
             return CiudadParser()
         elif nombre_banco == "Banco Comafi":
             return ComafiParser()
+        elif "ARCA" in nombre_banco or "AFIP" in nombre_banco:
+            return ARCAParser()
         
         # Mapeos alternativos para robustez
         b = nombre_banco.upper()
@@ -62,6 +65,7 @@ class FabricaParsers:
         if "SUPERVIELLE" in b: return SupervielleParser()
         if "CIUDAD" in b: return CiudadParser()
         if "COMAFI" in b: return ComafiParser()
+        if "ARCA" in b or "AFIP" in b: return ARCAParser()
         
         return None
 

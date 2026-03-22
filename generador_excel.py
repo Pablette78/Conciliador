@@ -281,19 +281,19 @@ def _crear_conciliacion(wb, resultado, datos_banco, mes_anio):
     if resultado.solo_banco:
         r += 1
         ws.cell(row=r, column=1, value=f'SOLO EN BANCO ({len(resultado.solo_banco)} movimientos sin match)').font = Font(name='Arial', bold=True, size=11, color='C00000')
-        r += 1; _h(ws, r, ['Fecha', 'Crédito', 'Débito', 'Concepto', 'Tipo Automático', '', '', '']); r += 1
+        r += 1; _h(ws, r, ['Fecha', 'Concepto', 'Tipo Automático', 'Crédito', 'Débito', '', '', '']); r += 1
         start_sb = r
         for m in resultado.solo_banco:
             ws.cell(row=r, column=1, value=m.fecha).number_format = DTF
-            if m.credito: ws.cell(row=r, column=2, value=m.credito).number_format = MF
-            if m.debito: ws.cell(row=r, column=3, value=m.debito).number_format = MF
-            ws.cell(row=r, column=4, value=m.concepto)
-            ws.cell(row=r, column=5, value=m.tipo)
+            ws.cell(row=r, column=2, value=m.concepto)
+            ws.cell(row=r, column=3, value=m.tipo)
+            if m.credito: ws.cell(row=r, column=4, value=m.credito).number_format = MF
+            if m.debito: ws.cell(row=r, column=5, value=m.debito).number_format = MF
             _sf(ws, r, 5, DF, NB)
             r += 1
         ws.cell(row=r, column=1, value='TOTAL SOLO EN BANCO').font = TF; ws.cell(row=r, column=1).fill = NB
-        ws.cell(row=r, column=2, value=f'=SUM(B{start_sb}:B{r-1})').number_format = MF; ws.cell(row=r, column=2).font = TF; ws.cell(row=r, column=2).fill = NB
-        ws.cell(row=r, column=3, value=f'=SUM(C{start_sb}:C{r-1})').number_format = MF; ws.cell(row=r, column=3).font = TF; ws.cell(row=r, column=3).fill = NB
+        ws.cell(row=r, column=4, value=f'=SUM(D{start_sb}:D{r-1})').number_format = MF; ws.cell(row=r, column=4).font = TF; ws.cell(row=r, column=4).fill = NB
+        ws.cell(row=r, column=5, value=f'=SUM(E{start_sb}:E{r-1})').number_format = MF; ws.cell(row=r, column=5).font = TF; ws.cell(row=r, column=5).fill = NB
         r += 1
 
     if resultado.solo_sistema:

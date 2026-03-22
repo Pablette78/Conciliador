@@ -16,7 +16,20 @@ class MotorConciliacion:
         sist_disp = list(movimientos_sistema)
         resultado = ResultadoConciliacion()
 
+        es_arca = extracto.banco == "ARCA-Mis Retenciones"
+        
+        # Si es ARCA, dos niveles estrictos:
+        #   ARCA_FUERTE: monto exacto, +/- 3 días
+        #   ARCA_MEDIANO: diferencia de hasta $1, mismo mes
+        niveles_usar = self.niveles.copy()
+        if es_arca:
+            niveles_usar = [
+                {'nombre': 'ARCA_FUERTE',  'tol_monto': 0.0, 'tol_dias': 3,  'mismo_mes': False},
+                {'nombre': 'ARCA_MEDIANO', 'tol_monto': 1.0, 'tol_dias': 999, 'mismo_mes': True},
+            ]
+
         # Separar solo gastos bancarios e impuestos usando prefijos de taxonomía
+        # EXCEPCIÓN: Si es ARCA, queremos conciliar TODO, no separamos gastos.
         solo_operativos_banco = []
         gastos_banco = []
         
@@ -26,7 +39,7 @@ class MotorConciliacion:
         )
         
         for m in banco_disp:
-            if m.tipo.startswith(TIPOS_GASTOS):
+            if not es_arca and m.tipo.startswith(TIPOS_GASTOS):
                 gastos_banco.append(m)
             else:
                 solo_operativos_banco.append(m)
@@ -34,7 +47,7 @@ class MotorConciliacion:
         banco_disp = solo_operativos_banco
         
         # Procesar niveles de conciliación
-        for nivel in self.niveles:
+        for nivel in niveles_usar:
             conciliados = self._hacer_pasada(banco_disp, sist_disp, nivel)
             resultado.conciliados.extend(conciliados)
 
@@ -44,8 +57,9 @@ class MotorConciliacion:
         # Categorizar gastos bancarios para el resumen
         self._procesar_gastos(gastos_banco, resultado)
         
-        # Validar saldos
-        self._validar_saldos(extracto, resultado)
+        # Validar saldos (Saltar para ARCA ya que no tiene saldo anterior/final bancario)
+        if not es_arca:
+            self._validar_saldos(extracto, resultado)
         
         return resultado
 
@@ -55,10 +69,16 @@ class MotorConciliacion:
         sist_matched = set()
         
         candidatos = []
+        mismo_mes = nivel.get('mismo_mes', False)
         for i, mb in enumerate(banco_list):
             for j, ms in enumerate(sist_list):
                 diff_m = abs(abs(mb.monto) - abs(ms.monto))
                 diff_d = abs((mb.fecha - ms.fecha).days)
+                
+                # Verificar restricción de mismo mes si aplica
+                if mismo_mes:
+                    if mb.fecha.year != ms.fecha.year or mb.fecha.month != ms.fecha.month:
+                        continue
                 
                 if diff_m <= nivel['tol_monto'] and diff_d <= nivel['tol_dias']:
                     # El score prioriza monto exacto, luego cercanía de fecha
