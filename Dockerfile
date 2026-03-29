@@ -17,10 +17,10 @@ COPY ["Conciliador Web/backend/requirements.txt", "./"]
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar el motor original (necesario para las importaciones del backend)
-COPY "conciliador v10" "./conciliador v10"
+COPY ["conciliador v10", "./conciliador v10"]
 
 # Copiar el código del backend
-COPY "Conciliador Web/backend" "./backend"
+COPY ["Conciliador Web/backend", "./backend"]
 
 # Exponer el puerto
 EXPOSE 8000
