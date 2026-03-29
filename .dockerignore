@@ -1,0 +1,30 @@
+# Directorios de Python
+__pycache__/
+*.py[cod]
+*$py.class
+env/
+venv/
+.venv/
+.env
+
+# Directorios de Node / Frontend (no necesarios para el backend)
+Conciliador Web/frontend/
+node_modules/
+dist/
+
+# Documentación y Archivos de Modelo (pesados)
+"Archivos de para modelos"/
+conciliador_web_mockup_*.png
+
+# Git y Logs
+.git
+.gitignore
+*.log
+*.xlsx
+*.xls
+*.pdf
+.DS_Store
+
+# Otros
+Dockerfile
+.dockerignore

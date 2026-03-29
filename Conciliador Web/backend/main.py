@@ -4,46 +4,79 @@ import shutil
 import tempfile
 import io
 import uuid
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
-# Añadir el path de la versión v10 para importar el núcleo
+# --- Entornos e Importaciones ---
 sys.path.append(os.path.abspath("../../conciliador v10"))
+sys.path.append(os.path.abspath("./conciliador v10")) # Para el contenedor Docker
 
+# Intentar importaciones robustas para local y docker
 try:
-    from core.models import DatosExtracto
+    from core.models import DatosExtracto, Movimiento, ItemConciliado
     from core.factory import FabricaParsers
     from core.engine import MotorConciliacion
     from core.utils import combinar_extractos, combinar_mayores
     from parser_excel import parsear_excel
     from generador_excel import generar_excel
     from detector_banco import detectar_banco_con_confianza
-except ImportError as e:
-    print(f"Error de importación: {e}")
+except ImportError:
+    # Si falla, intentar rutas alternativas de contenedor
+    from backend.parser_excel import parsear_excel
+    from backend.generador_excel import generar_excel
+    from backend.detector_banco import detectar_banco_con_confianza
 
 app = FastAPI(title="Conciliador Bancario API")
 
-# Configurar CORS
+# --- Seguridad ---
+# Se espera esta clave en el header X-API-KEY
+API_KEY = os.getenv("API_KEY", "conciliador_secret_123")
+
+async def verify_api_key(x_api_key: str = Header(None)):
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=403, detail="Clave de acceso no válida o inexistente.")
+    return x_api_key
+
+# --- Configurar CORS ---
+# En producción permitiremos el dominio de Vercel (se lee de env)
+allowed_origins = [
+    "http://localhost:5173",
+    "http://localhost:3000",
+    os.getenv("FRONTEND_URL", "*") # * solo para pruebas iniciales si falla
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Almacenamiento temporal persistente para resultados (durante la sesión)
+# Almacenamiento temporal persistent
 RESULTS_DIR = tempfile.mkdtemp(prefix="conciliador_results_")
+
+def mov_to_dict(m: Movimiento) -> dict:
+    return {
+        "fecha": m.fecha.strftime("%d/%m/%Y") if m.fecha else "—",
+        "concepto": m.concepto,
+        "debito": m.debito,
+        "credito": m.credito,
+        "descripcion": m.descripcion,
+        "tipo": m.tipo,
+        "referencia": m.referencia,
+        "monto": m.monto
+    }
 
 @app.get("/")
 async def root():
-    return {"status": "online", "message": "Conciliador Bancario API v10"}
+    return {"status": "online", "message": "Conciliador Bancario API v10 Cloud"}
 
-@app.post("/api/conciliar")
+@app.post("/api/conciliar", dependencies=[Depends(verify_api_key)])
 async def conciliar(
     banco: str = Form(...),
     extractos: List[UploadFile] = File(...),
@@ -73,18 +106,15 @@ async def conciliar(
                 b_det, conf = detectar_banco_con_confianza(r)
                 if b_det:
                     banco_final = b_det
-                    print(f"Detección automática: {b_det} (confianza: {conf})")
                     break
-            
             if banco_final == "— auto —":
-                raise HTTPException(status_code=400, detail="No se pudo detectar el banco automáticamente. Selecciónalo manualmente.")
+                raise HTTPException(status_code=400, detail="No se pudo detectar el banco automáticamente.")
 
         # 3. Procesar
         lista_datos = []
         for ruta in ruta_extractos:
             parser = FabricaParsers.obtener_parser(banco_final)
-            if not parser:
-                continue
+            if not parser: continue
             datos = parser.parse(ruta)
             lista_datos.append(datos)
 
@@ -102,14 +132,24 @@ async def conciliar(
         motor = MotorConciliacion()
         resultado = motor.conciliar(datos_comb, movs_sis)
 
-        # 4. Generar Excel y guardarlo con un ID único
+        # 4. Generar Excel
         file_id = str(uuid.uuid4())
         filename = f"Conciliacion_{banco_final.replace(' ', '_')}.xlsx"
         ruta_resultado = os.path.join(RESULTS_DIR, f"{file_id}_{filename}")
-        
         generar_excel(resultado, datos_comb, ruta_resultado, "Web", movimientos_sistema=movs_sis)
 
-        # 5. Respuesta JSON robusta
+        # 5. Respuesta JSON
+        solo_banco_ui = [mov_to_dict(m) for m in resultado.solo_banco[:100]]
+        solo_sist_ui = [mov_to_dict(m) for m in resultado.solo_sistema[:100]]
+        
+        pre_gastos = []
+        for cat, d in resultado.gastos_por_categoria.items():
+            pre_gastos.append({
+                "categoria": cat,
+                "total": d["total"],
+                "color": "#3B82F6" if "IMP" in cat else "#10B981"
+            })
+
         return {
             "success": True,
             "banco": banco_final,
@@ -121,8 +161,11 @@ async def conciliar(
                 "n_banco": len(resultado.solo_banco),
                 "n_sist": len(resultado.solo_sistema),
                 "n_gastos": len(resultado.gastos_por_categoria),
+                "total_gastos": sum(d["total"] for d in resultado.gastos_por_categoria.values()),
                 "titular": datos_comb.titular or banco_final,
-                "gastos": {cat: d["total"] for cat, d in resultado.gastos_por_categoria.items()}
+                "solo_banco": solo_banco_ui,
+                "solo_sistema": solo_sist_ui,
+                "gastos": pre_gastos
             }
         }
 
@@ -131,13 +174,10 @@ async def conciliar(
         print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        # Los archivos de entrada se pueden borrar ya
-        # shutil.rmtree(proc_dir)
-        pass
+        shutil.rmtree(proc_dir, ignore_errors=True)
 
-@app.get("/api/download/{file_id}")
+@app.get("/api/download/{file_id}", dependencies=[Depends(verify_api_key)])
 async def download_file(file_id: str):
-    # Buscar el archivo que empiece por este ID
     for f in os.listdir(RESULTS_DIR):
         if f.startswith(file_id):
             filepath = os.path.join(RESULTS_DIR, f)
@@ -147,9 +187,8 @@ async def download_file(file_id: str):
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 filename=display_name
             )
-    
-    raise HTTPException(status_code=404, detail="Archivo no encontrado o expirado.")
+    raise HTTPException(status_code=404, detail="Archivo no encontrado.")
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))

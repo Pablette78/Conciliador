@@ -2,43 +2,78 @@
 
 @theme {
   --color-brand-blue: #3B82F6;
-  --color-brand-dark: #0F172A;
-  --color-brand-panel: #1E293B;
-  --color-brand-card: #334155;
+  --color-brand-dark: #0B0E14;
+  --color-brand-panel: #11141B;
+  --color-brand-card: #1A1D26;
+  --color-brand-glass: rgba(26, 29, 38, 0.7);
   
-  --font-sans: "Inter", "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
 }
 
 :root {
-  background-color: #0F172A;
+  background-color: #0B0E14;
   color: #F1F5F9;
   font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
 }
 
 body {
   margin: 0;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
-/* Glassmorphism utility */
-.glass {
-  background: rgba(30, 41, 59, 0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+/* Glassmorphism Sidebar */
+.glass-sidebar {
+  background: rgba(17, 20, 27, 0.6);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Premium Card */
+.card-premium {
+  background: var(--color-brand-card);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+}
+
+.card-gradient-blue {
+  background: linear-gradient(135deg, #1A1D26 0%, #1e2a4a 100%);
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #0F172A;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #334155;
+  background: #2e303a;
   border-radius: 10px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #3B82F6;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.5s ease-out forwards;
+}
+
+/* Pill status */
+.status-pill {
+  padding: 4px 12px;
+  border-radius: 100px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
