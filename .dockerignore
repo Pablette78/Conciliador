@@ -8,7 +8,7 @@ venv/
 .env
 
 # Directorios de Node / Frontend (no necesarios para el backend)
-Conciliador Web/frontend/
+Conciliador_Web/frontend/
 node_modules/
 dist/
 

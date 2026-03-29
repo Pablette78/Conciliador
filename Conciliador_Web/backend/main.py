@@ -12,8 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 
 # --- Entornos e Importaciones ---
-sys.path.append(os.path.abspath("../../conciliador v10"))
-sys.path.append(os.path.abspath("./conciliador v10")) # Para el contenedor Docker
+sys.path.append(os.path.abspath("../../Conciliador_v10"))
+sys.path.append(os.path.abspath("./Conciliador_v10")) # Para el contenedor Docker
 
 # Intentar importaciones robustas para local y docker
 try:
