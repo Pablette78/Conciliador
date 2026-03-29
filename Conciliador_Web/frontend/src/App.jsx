@@ -138,7 +138,7 @@ function App() {
               </div>
            </div>
            <h1 className="text-2xl font-black text-center mb-2 tracking-tight">Acceso Seguro</h1>
-           <p className="text-slate-400 text-sm text-center mb-8">Introduce tu clave de acceso proporcionada para las pruebas del Conciliador B10.</p>
+           <p className="text-slate-400 text-sm text-center mb-8">Introduce tu clave de acceso proporcionada para las pruebas del Conciliador Flow.</p>
            
            <form onSubmit={handleLogin} className="space-y-4">
               <input 
@@ -174,7 +174,7 @@ function App() {
           <div className="bg-brand-blue p-2.5 rounded-2xl shadow-lg shadow-brand-blue/30">
             <Activity className="text-white" size={26} />
           </div>
-          <span className="text-xl font-extrabold tracking-tight">Conciliador <span className="text-brand-blue">B10</span></span>
+          <span className="text-xl font-extrabold tracking-tight">Conciliador <span className="text-brand-blue">Flow</span></span>
         </div>
 
         <nav className="flex-1 px-4 space-y-2">
