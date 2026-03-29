@@ -1,8 +1,41 @@
+# Python
 __pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+.python-version
+
+# Javascript / Frontend
+node_modules/
 dist/
-*.spec
-*.exe
-*.bat
-preview.html
+dist-ssr/
+*.local
+.npm/
+
+# IDEs
 .vscode/
+.idea/
+*.swp
+*.swo
+
+# Project specific
+Conciliador Web/backend/temp/
+conciliador_results_*/
 *.log
+
+# Excluir archivos Excel/PDF autogenerados o temporales 
+# (pero mantener los de la carpeta Ejemplos si existen)
+*.xlsx
+*.xls
+*.pdf
+!**/Ejemplos/*.xlsx
+!**/Ejemplos/*.xls
+!**/Ejemplos/*.pdf
+
+# Otros
+.DS_Store
+conciliador_web_mockup_*.png
+*.lnk

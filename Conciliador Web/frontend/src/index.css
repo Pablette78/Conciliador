@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-blue: #3B82F6;
+  --color-brand-dark: #0F172A;
+  --color-brand-panel: #1E293B;
+  --color-brand-card: #334155;
+  
+  --font-sans: "Inter", "Segoe UI", Roboto, sans-serif;
+}
+
+:root {
+  background-color: #0F172A;
+  color: #F1F5F9;
+  font-family: var(--font-sans);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+}
+
+/* Glassmorphism utility */
+.glass {
+  background: rgba(30, 41, 59, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #0F172A;
+}
+::-webkit-scrollbar-thumb {
+  background: #334155;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3B82F6;
+}
