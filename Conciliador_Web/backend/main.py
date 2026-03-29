@@ -42,11 +42,12 @@ async def verify_api_key(x_api_key: str = Header(None)):
     return x_api_key
 
 # --- Configurar CORS ---
-# En producción permitiremos el dominio de Vercel (se lee de env)
+# Permitir específicamente el dominio de Vercel y locales para desarrollo
 allowed_origins = [
     "http://localhost:5173",
     "http://localhost:3000",
-    os.getenv("FRONTEND_URL", "*") # * solo para pruebas iniciales si falla
+    "https://conciliador-virid.vercel.app",
+    os.getenv("FRONTEND_URL", "https://conciliador-virid.vercel.app")
 ]
 
 app.add_middleware(
