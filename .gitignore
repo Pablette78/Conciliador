@@ -39,3 +39,17 @@ conciliador_results_*/
 .DS_Store
 conciliador_web_mockup_*.png
 *.lnk
+
+# Artefactos de PyInstaller / build
+build/
+*.spec
+
+# Archivos de debug/scratch locales
+dump_*.py
+dump_*.txt
+test_*.py
+*_out.txt
+*_test_out.txt
+
+# Harness local
+.claude/
