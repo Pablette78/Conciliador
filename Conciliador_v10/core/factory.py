@@ -14,6 +14,8 @@ from .parsers.supervielle import SupervielleParser
 from .parsers.ciudad import CiudadParser
 from .parsers.comafi import ComafiParser
 from .parsers.arca import ARCAParser
+from .parsers.amex import AmexParser
+from .parsers.visa import VisaParser
 
 class FabricaParsers:
     @staticmethod
@@ -48,6 +50,10 @@ class FabricaParsers:
             return ComafiParser()
         elif "ARCA" in nombre_banco or "AFIP" in nombre_banco:
             return ARCAParser()
+        elif nombre_banco == "American Express":
+            return AmexParser()
+        elif nombre_banco == "Tarjeta VISA":
+            return VisaParser()
         
         # Mapeos alternativos para robustez
         b = nombre_banco.upper()
@@ -66,6 +72,8 @@ class FabricaParsers:
         if "CIUDAD" in b: return CiudadParser()
         if "COMAFI" in b: return ComafiParser()
         if "ARCA" in b or "AFIP" in b: return ARCAParser()
+        if "AMEX" in b or "AMERICAN EXPRESS" in b: return AmexParser()
+        if "VISA" in b: return VisaParser()
         
         return None
 

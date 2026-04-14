@@ -65,6 +65,16 @@ _FINGERPRINTS_PDF = [
     ("Banco Comafi", [
         r'COMAFI|Comafi',
     ]),
+    # American Express
+    ("American Express", [
+        r'American Express|AMERICAN EXPRESS',
+        r'Estado de Cuenta',
+    ]),
+    # Tarjeta VISA
+    ("Tarjeta VISA", [
+        r'VISA BUSINESS|VISA SUPER PYME|Tarjeta VISA|VISA',
+        r'TITULAR DE CUENTA|Cuenta:',
+    ]),
     # ARCA / AFIP
     ("ARCA-Mis Retenciones", [
         r'AFIP|ARCA',
