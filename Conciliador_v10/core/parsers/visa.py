@@ -1,10 +1,9 @@
 import re
 from datetime import datetime
-from typing import Optional
 import pdfplumber
 
-from core.models import DatosExtracto, Movimiento
-from core.parsers.base import BaseParser
+from .base import BaseParser
+from ..models import Movimiento, DatosExtracto
 
 
 class VisaParser(BaseParser):
@@ -15,6 +14,16 @@ class VisaParser(BaseParser):
     
     # Patrón para identificar montos con formato monetario (ej: 1.234,56 o 1.234,56-)
     PAT_MONTO = re.compile(r'^-?[\d\.]+,\d{2}-?$')
+    # Patrón para extraer fecha al inicio de línea (ej: "16.02.25" o "25 Setiem. 12")
+    PAT_FECHA_PUNTO = re.compile(r'^(\d{2})\.(\d{2})\.(\d{2})\s')
+    PAT_FECHA_TEXTO = re.compile(r'^(\d{2})\s+([A-Za-z\.]+)\s+(\d{2})\s')
+    MESES_CORTO = {
+        'ene': 1, 'feb': 2, 'mar': 3, 'abr': 4, 'may': 5, 'jun': 6,
+        'jul': 7, 'ago': 8, 'sep': 9, 'set': 9, 'oct': 10, 'nov': 11, 'dic': 12,
+        'enero': 1, 'febrero': 2, 'marzo': 3, 'abril': 4, 'mayo': 5, 'junio': 6,
+        'julio': 7, 'agosto': 8, 'septiembre': 9, 'setiembre': 9,
+        'octubre': 10, 'noviembre': 11, 'diciembre': 12,
+    }
 
     def parse(self, pdf_path: str) -> DatosExtracto:
         titular = ""
@@ -104,27 +113,24 @@ class VisaParser(BaseParser):
                     ars_val = self.limpiar_monto(ars_str)
                     if ars_val == 0.0:
                         continue
-                        
-                    # Filtrar comprobante/ticket del concepto
-                    # Ej concept: "16.02.25 006117* HIPERPLASTICOS COLOMBRARO C.03/03"
-                    # Ej concept: "25 Setiem. 12 102480 * ESTACION DE SERVICIO S"
-                    
-                    # 1. Quitar fecha del inicio
+
+                    # Extraer fecha real del concepto crudo
+                    # Formatos: "16.02.25 ..." o "25 Setiem. 12 ..."
+                    fecha_mov = self._extraer_fecha(concepto_crudo)
+
+                    # Limpiar concepto: quitar fecha y ticket
                     concepto_limpio = re.sub(r'^(?:\d{2}\s+[A-Za-z\.]+\s+)?(?:\d{2}\.\d{2}\.\d{2}|\d{2})\s+', '', concepto_crudo)
-                    
-                    # 2. Quitar número de ticket (ej: 006117* o 102480 *)
                     concepto_limpio = re.sub(r'^\d{4,}\s*\*?\s*', '', concepto_limpio)
-                    
-                    # Si era pago en pesos: ("SU PAGO EN PESOS...") o descuento ("BONIF") u original con guion negativo
+
                     es_pago = False
                     if "PAGO " in concepto_limpio.upper() or "PAYMENT" in concepto_limpio.upper() or "BONIF" in concepto_limpio.upper() or "-" in ars_str:
                         es_pago = True
-                        
+
                     ars_val = abs(ars_val)
                     tipo = self.clasificar_concepto(concepto_limpio)
-                    
+
                     mov = Movimiento(
-                        fecha=datetime.now(), # Aproximación por ahora
+                        fecha=fecha_mov,
                         concepto=concepto_limpio,
                         referencia="",
                         descripcion="",
@@ -149,3 +155,30 @@ class VisaParser(BaseParser):
             saldo_anterior=saldo_anterior,
             saldo_final=saldo_final
         )
+
+    def _extraer_fecha(self, texto: str) -> datetime:
+        """Extrae la fecha real de la línea de movimiento VISA.
+        Formatos: '16.02.25 ...' o '25 Setiem. 12 ...'
+        Fallback: datetime.now() si no se puede parsear."""
+        # Formato DD.MM.YY
+        m = self.PAT_FECHA_PUNTO.match(texto)
+        if m:
+            try:
+                return datetime.strptime(f"{m.group(1)}/{m.group(2)}/{m.group(3)}", '%d/%m/%y')
+            except ValueError:
+                pass
+
+        # Formato "DD Mes YY" (ej: "25 Setiem. 12")
+        m = self.PAT_FECHA_TEXTO.match(texto)
+        if m:
+            dia = int(m.group(1))
+            mes_str = m.group(2).rstrip('.').lower()
+            anio = int(m.group(3)) + 2000
+            mes = self.MESES_CORTO.get(mes_str, 0)
+            if mes:
+                try:
+                    return datetime(anio, mes, dia)
+                except ValueError:
+                    pass
+
+        return datetime.now()

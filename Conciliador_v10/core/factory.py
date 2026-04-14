@@ -1,84 +1,62 @@
-import os
 from .parsers.santander import SantanderParser
 from .parsers.galicia import GaliciaParser
-from .parsers.bbva import BBVAParser
-from .parsers.bancor import BancorParser
-from .parsers.provincia import ProvinciaParser
-from .parsers.nacion import NacionParser
-from .parsers.credicoop import CredicoopParser
-from .parsers.hsbc import HSBCParser
-from .parsers.icbc import ICBCParser
+from .parsers.generic import (
+    BBVAParser, BancorParser, NacionParser, CredicoopParser,
+    HSBCParser, PatagoniaParser, SupervielleParser,
+)
 from .parsers.macro import MacroParser
-from .parsers.patagonia import PatagoniaParser
-from .parsers.supervielle import SupervielleParser
+from .parsers.provincia import ProvinciaParser
+from .parsers.icbc import ICBCParser
 from .parsers.ciudad import CiudadParser
 from .parsers.comafi import ComafiParser
 from .parsers.arca import ARCAParser
 from .parsers.amex import AmexParser
 from .parsers.visa import VisaParser
 
+# Mapeo normalizado: clave en MAYÚSCULAS → clase parser
+_PARSER_MAP = {
+    "SANTANDER": SantanderParser,
+    "GALICIA": GaliciaParser,
+    "BBVA": BBVAParser,
+    "FRANCES": BBVAParser,
+    "BANCOR": BancorParser,
+    "CORDOBA": BancorParser,
+    "PROVINCIA": ProvinciaParser,
+    "BAPRO": ProvinciaParser,
+    "NACION": NacionParser,
+    "CREDICOOP": CredicoopParser,
+    "HSBC": HSBCParser,
+    "ICBC": ICBCParser,
+    "MACRO": MacroParser,
+    "PATAGONIA": PatagoniaParser,
+    "SUPERVIELLE": SupervielleParser,
+    "CIUDAD": CiudadParser,
+    "COMAFI": ComafiParser,
+    "ARCA": ARCAParser,
+    "AFIP": ARCAParser,
+    "AMEX": AmexParser,
+    "AMERICAN EXPRESS": AmexParser,
+    "VISA": VisaParser,
+}
+
+
 class FabricaParsers:
     @staticmethod
     def obtener_parser(nombre_banco: str):
-        if nombre_banco == "Banco Santander":
-            return SantanderParser()
-        elif nombre_banco == "Banco Galicia":
-            return GaliciaParser()
-        elif nombre_banco == "Banco BBVA":
-            return BBVAParser()
-        elif nombre_banco == "Banco Bancor":
-            return BancorParser()
-        elif nombre_banco == "Banco Provincia":
-            return ProvinciaParser()
-        elif nombre_banco == "Banco Nación":
-            return NacionParser()
-        elif nombre_banco == "Banco Credicoop":
-            return CredicoopParser()
-        elif nombre_banco == "Banco HSBC":
-            return HSBCParser()
-        elif nombre_banco == "Banco ICBC":
-            return ICBCParser()
-        elif nombre_banco == "Banco Macro":
-            return MacroParser()
-        elif nombre_banco == "Banco Patagonia":
-            return PatagoniaParser()
-        elif nombre_banco == "Banco Supervielle":
-            return SupervielleParser()
-        elif nombre_banco == "Banco Ciudad":
-            return CiudadParser()
-        elif nombre_banco == "Banco Comafi":
-            return ComafiParser()
-        elif "ARCA" in nombre_banco or "AFIP" in nombre_banco:
-            return ARCAParser()
-        elif nombre_banco == "American Express":
-            return AmexParser()
-        elif nombre_banco == "Tarjeta VISA":
-            return VisaParser()
-        
-        # Mapeos alternativos para robustez
-        b = nombre_banco.upper()
-        if "GALICIA" in b: return GaliciaParser()
-        if "SANTANDER" in b: return SantanderParser()
-        if "BBVA" in b or "FRANCES" in b: return BBVAParser()
-        if "BANCOR" in b or "CORDOBA" in b: return BancorParser()
-        if "PROVINCIA" in b or "BAPRO" in b: return ProvinciaParser()
-        if "NACION" in b: return NacionParser()
-        if "CREDICOOP" in b: return CredicoopParser()
-        if "HSBC" in b: return HSBCParser()
-        if "ICBC" in b: return ICBCParser()
-        if "MACRO" in b: return MacroParser()
-        if "PATAGONIA" in b: return PatagoniaParser()
-        if "SUPERVIELLE" in b: return SupervielleParser()
-        if "CIUDAD" in b: return CiudadParser()
-        if "COMAFI" in b: return ComafiParser()
-        if "ARCA" in b or "AFIP" in b: return ARCAParser()
-        if "AMEX" in b or "AMERICAN EXPRESS" in b: return AmexParser()
-        if "VISA" in b: return VisaParser()
-        
+        if not nombre_banco:
+            return None
+
+        b = nombre_banco.strip().upper()
+
+        # Búsqueda exacta primero (después de normalizar)
+        for clave, parser_cls in _PARSER_MAP.items():
+            if clave in b:
+                return parser_cls()
+
         return None
 
+
 def detectar_y_preparar(ruta_archivo: str):
-    # Por ahora mantenemos la lógica de detección actual pero retornamos el objeto Parser
     from detector_banco import detectar_banco
     banco = detectar_banco(ruta_archivo)
     if banco:

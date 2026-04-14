@@ -32,16 +32,23 @@ class BaseParser(ABC):
         return 'OTRO'
 
     def limpiar_monto(self, texto: str) -> float:
-        """Utilidad para limpiar strings de montos"""
-        if not texto: return 0.0
-        # Eliminar $, espacios, y ajustar separadores decimales/miles
-        # Asumiendo formato local común: miles con . y decimales con ,
-        s = texto.replace('$', '').replace(' ', '')
-        if ',' in s and '.' in s: # Formato 1.234,56
-            s = s.replace('.', '').replace(',', '.')
-        elif ',' in s: # Formato 1234,56
+        """Limpia strings de montos. Soporta formato español (1.234,56)
+        e inglés (1,234.56), con o sin signo negativo."""
+        if not texto or not texto.strip(): return 0.0
+        s = texto.strip().replace('$', '').replace(' ', '')
+        s = s.lstrip('-')  # abs() al final se encarga del signo
+
+        if ',' in s and '.' in s:
+            if s.rindex(',') > s.rindex('.'):
+                # Español: 1.234,56
+                s = s.replace('.', '').replace(',', '.')
+            else:
+                # Inglés: 1,234.56
+                s = s.replace(',', '')
+        elif ',' in s:
+            # Solo coma → decimal (1234,56)
             s = s.replace(',', '.')
-        
+
         try:
             return abs(float(s))
         except ValueError:

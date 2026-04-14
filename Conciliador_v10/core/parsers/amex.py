@@ -18,6 +18,7 @@ class AmexParser(BaseParser):
         saldo_final = 0.0
         movimientos = []
         año_vencimiento = datetime.now().year
+        mes_vencimiento = datetime.now().month
 
         lineas = []
         with pdfplumber.open(ruta_archivo) as pdf:
@@ -62,6 +63,7 @@ class AmexParser(BaseParser):
                 try:
                     fecha_vto = datetime.strptime(match_vto.group(1), '%d/%m/%y')
                     año_vencimiento = fecha_vto.year
+                    mes_vencimiento = fecha_vto.month
                 except ValueError:
                     pass
 
@@ -99,13 +101,14 @@ class AmexParser(BaseParser):
                 mes_str = match_fecha.group(2).lower()
                 mes = self.MESES.get(mes_str, 1)
                 
-                # Asignamos el año de vencimiento. Si el mes es diciembre y el vto es enero, puede pasar, pero asumimos el del vto
-                # Ajuste de año: Si el mes del movimiento es mayor al mes de vencimiento, probablemente sea del año anterior
+                # Ajuste de año: si el mes del movimiento es posterior al mes del
+                # vencimiento, el consumo pertenece al año anterior.
+                # Ej: vencimiento enero 2026, consumo de diciembre → diciembre 2025
                 año_mov = año_vencimiento
-                if mes == 12 and año_vencimiento == 2026: # Todo: logical check, if statement can be better but we trust the base year. 
-                    pass
+                if mes > mes_vencimiento:
+                    año_mov -= 1
 
-                fecha_mov = datetime(año_vencimiento, mes, dia)
+                fecha_mov = datetime(año_mov, mes, dia)
 
                 # Extraer monto al final.
                 # En AMEX el monto siempre viene separado por MUCHOS espacios del resto (referencias, etc).

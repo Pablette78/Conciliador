@@ -10,12 +10,11 @@ class ProvinciaParser(BaseParser):
         movimientos = []
         saldo_anterior = 0.0
         saldo_final = 0.0
-        titular = "INSTRUMENTAL PASTEUR SRL"
+        titular = ""
 
-        # Regex para movimientos: Fecha, Concepto, Importe, [FechaValor], Saldo
-        # Captura: 1:Fecha, 2:Concepto, 3:Importe, 4:Saldo
         re_mov = re.compile(r'^(\d{2}/\d{2}/\d{4})\s+(.+?)\s+(-?[\d\.]+)(?:\s+\d{2}-\d{2})?\s+([\d\.]+)$')
         re_saldo_ant = re.compile(r'^(\d{2}/\d{2}/\d{4})\s+SALDO ANTERIOR\s+([\d\.]+)$')
+        re_titular = re.compile(r'(?:TITULAR|RAZ[OÓ]N\s+SOCIAL)[:\s]+(.+)', re.I)
 
         with pdfplumber.open(ruta_archivo) as pdf:
             ultimo_mov = None
@@ -28,6 +27,16 @@ class ProvinciaParser(BaseParser):
                 for linea in lineas:
                     linea = linea.strip()
                     if not linea: continue
+
+                    # Detectar titular
+                    m_tit = re_titular.search(linea)
+                    if m_tit and not titular:
+                        titular = m_tit.group(1).strip()
+                        continue
+                    if not titular:
+                        l_up = linea.upper()
+                        if ('SRL' in l_up or 'SAIC' in l_up or 'S.A' in l_up) and 'CUIT' not in l_up and 'BANCO' not in l_up:
+                            titular = linea.strip()
 
                     # 1. Intentar capturar Saldo Anterior
                     m_sa = re_saldo_ant.match(linea)
