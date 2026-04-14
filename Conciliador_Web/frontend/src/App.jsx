@@ -1,16 +1,16 @@
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip, ResponsiveContainer,
-  PieChart, Pie, Cell, Legend
+  PieChart, Pie, Cell, Legend, ResponsiveContainer
 } from 'recharts'
 import {
   Upload, AlertCircle, Download, LayoutDashboard,
-  TrendingUp, CheckCircle2, Layers, Lock, LogOut,
-  FileText, Activity, User, Trash2
+  CheckCircle2, Layers, Lock, LogOut, FileText,
+  Activity, User, Trash2, Users, Plus, Shield,
+  Eye, EyeOff, RefreshCw
 } from 'lucide-react'
 
-// --- Configuración Global ---
+// --- Config ---
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
 
 const BANCOS = [
@@ -19,8 +19,7 @@ const BANCOS = [
   "Banco Provincia", "Banco Nación", "Banco Credicoop", "Banco HSBC",
   "Banco ICBC", "Banco Macro", "Banco Patagonia", "Banco Supervielle",
   "Banco Ciudad", "Banco Comafi",
-  "ARCA-Mis Retenciones",
-  "American Express", "Tarjeta VISA",
+  "ARCA-Mis Retenciones", "American Express", "Tarjeta VISA",
 ]
 
 const ALLOWED_EXTENSIONS = ['.pdf', '.xlsx', '.xls']
@@ -30,133 +29,115 @@ const COLORS = ['#3B82F6', '#F59E0B', '#10B981', '#6366F1']
 
 function validarArchivo(file) {
   const ext = '.' + file.name.split('.').pop().toLowerCase()
-  if (!ALLOWED_EXTENSIONS.includes(ext)) {
+  if (!ALLOWED_EXTENSIONS.includes(ext))
     return `Tipo no permitido: "${file.name}". Solo PDF, XLSX y XLS.`
-  }
-  if (file.size > MAX_FILE_SIZE_BYTES) {
+  if (file.size > MAX_FILE_SIZE_BYTES)
     return `"${file.name}" supera el límite de ${MAX_FILE_SIZE_MB} MB.`
-  }
   return null
 }
 
-function App() {
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [apiKey, setApiKey] = useState("")
+// Axios con token automático
+const api = axios.create({ baseURL: API_BASE_URL })
+api.interceptors.request.use(cfg => {
+  const token = sessionStorage.getItem('token')
+  if (token) cfg.headers['Authorization'] = `Bearer ${token}`
+  return cfg
+})
+
+// ============================================================
+// APP
+// ============================================================
+export default function App() {
+  const [token, setToken]       = useState(() => sessionStorage.getItem('token'))
+  const [usuario, setUsuario]   = useState(null)
   const [loginError, setLoginError] = useState(null)
 
-  const [banco, setBanco] = useState("— auto —")
+  const [view, setView]         = useState('dashboard')
+  const [banco, setBanco]       = useState("— auto —")
   const [extractos, setExtractos] = useState([])
-  const [mayores, setMayores] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [mayores, setMayores]   = useState([])
+  const [loading, setLoading]   = useState(false)
   const [downloading, setDownloading] = useState(false)
   const [resultado, setResultado] = useState(null)
-  const [error, setError] = useState(null)
+  const [error, setError]       = useState(null)
   const [tableTab, setTableTab] = useState('banco')
 
-  // Restaurar sesión guardada
+  // Cargar datos del usuario al tener token
   useEffect(() => {
-    const savedKey = localStorage.getItem('conciliador_key')
-    if (savedKey) {
-      setApiKey(savedKey)
-      setIsAuthenticated(true)
-    }
-  }, [])
+    if (!token) return
+    api.get('/auth/me')
+      .then(r => setUsuario(r.data))
+      .catch(() => handleLogout())
+  }, [token])
 
-  const handleLogin = (e) => {
-    e.preventDefault()
-    if (apiKey.length < 5) {
-      setLoginError("La clave es demasiado corta.")
-      return
-    }
-    localStorage.setItem('conciliador_key', apiKey)
-    setIsAuthenticated(true)
+  const handleLogin = async ({ username, password }) => {
     setLoginError(null)
+    try {
+      const r = await axios.post(`${API_BASE_URL}/auth/login`, { username, password })
+      sessionStorage.setItem('token', r.data.access_token)
+      setToken(r.data.access_token)
+      setUsuario(r.data.usuario)
+    } catch (err) {
+      setLoginError(err.response?.data?.detail || "Error de conexión.")
+    }
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('conciliador_key')
-    setIsAuthenticated(false)
-    setApiKey("")
+    sessionStorage.removeItem('token')
+    setToken(null)
+    setUsuario(null)
     setResultado(null)
     setError(null)
+    setView('dashboard')
   }
 
   const agregarArchivos = (files) => {
-    const errores = []
-    const nuevosPdf = []
-    const nuevosExcel = []
-
+    const errores = [], pdfs = [], excels = []
     for (const f of files) {
       const err = validarArchivo(f)
       if (err) { errores.push(err); continue }
       const ext = '.' + f.name.split('.').pop().toLowerCase()
-      if (ext === '.pdf') nuevosPdf.push(f)
-      else nuevosExcel.push(f)
+      ext === '.pdf' ? pdfs.push(f) : excels.push(f)
     }
-
     if (errores.length) setError(errores.join(' | '))
     else setError(null)
-
-    if (nuevosPdf.length) setExtractos(prev => [...prev, ...nuevosPdf])
-    if (nuevosExcel.length) setMayores(prev => [...prev, ...nuevosExcel])
+    if (pdfs.length) setExtractos(p => [...p, ...pdfs])
+    if (excels.length) setMayores(p => [...p, ...excels])
   }
 
   const handleConciliar = async () => {
-    if (extractos.length === 0 || mayores.length === 0) {
-      setError("Debés cargar al menos un extracto (PDF) y un mayor (Excel).")
+    if (!extractos.length || !mayores.length) {
+      setError("Cargá al menos un extracto (PDF) y un mayor (Excel).")
       return
     }
-    setLoading(true)
-    setError(null)
-
-    const formData = new FormData()
-    formData.append('banco', banco)
-    extractos.forEach(f => formData.append('extractos', f))
-    mayores.forEach(f => formData.append('mayores', f))
-
+    setLoading(true); setError(null)
+    const fd = new FormData()
+    fd.append('banco', banco)
+    extractos.forEach(f => fd.append('extractos', f))
+    mayores.forEach(f => fd.append('mayores', f))
     try {
-      const resp = await axios.post(`${API_BASE_URL}/api/conciliar`, formData, {
-        headers: { 'X-API-KEY': apiKey }
-      })
-      if (resp.data.success) {
-        setResultado(resp.data)
-        setTableTab('banco')
-      }
+      const r = await api.post('/api/conciliar', fd)
+      if (r.data.success) { setResultado(r.data); setTableTab('banco') }
     } catch (err) {
-      if (err.response?.status === 403) {
-        setError("Error de autenticación. Verificá tu clave.")
-      } else {
-        setError(err.response?.data?.detail || "Error en el servidor. Intentá nuevamente.")
-      }
-    } finally {
-      setLoading(false)
-    }
+      if (err.response?.status === 401) handleLogout()
+      else setError(err.response?.data?.detail || "Error en el servidor.")
+    } finally { setLoading(false) }
   }
 
   const handleDownload = async () => {
     if (!resultado?.fileId || downloading) return
     setDownloading(true)
     try {
-      const resp = await axios.get(`${API_BASE_URL}/api/download/${resultado.fileId}`, {
-        responseType: 'blob',
-        headers: { 'X-API-KEY': apiKey }
-      })
-      const url = window.URL.createObjectURL(new Blob([resp.data]))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', resultado.filename)
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
+      const r = await api.get(`/api/download/${resultado.fileId}`, { responseType: 'blob' })
+      const url = window.URL.createObjectURL(new Blob([r.data]))
+      const a = document.createElement('a')
+      a.href = url; a.download = resultado.filename
+      document.body.appendChild(a); a.click(); a.remove()
       window.URL.revokeObjectURL(url)
-    } catch {
-      setError("Error al descargar el archivo. Intentá nuevamente.")
-    } finally {
-      setDownloading(false)
-    }
+    } catch { setError("Error al descargar.") }
+    finally { setDownloading(false) }
   }
 
-  // --- Datos visuales ---
   const pieData = useMemo(() => {
     if (!resultado?.summary) return []
     const { n_conc, n_banco, n_sist, n_diff } = resultado.summary
@@ -164,7 +145,7 @@ function App() {
       { name: 'Conciliados', value: n_conc },
       { name: 'Solo Banco', value: n_banco },
       { name: 'Solo Sistema', value: n_sist },
-      { name: 'Diferencias', value: n_diff }
+      { name: 'Diferencias', value: n_diff },
     ]
   }, [resultado])
 
@@ -172,44 +153,16 @@ function App() {
     if (!resultado?.summary) return []
     if (tableTab === 'banco') return resultado.summary.solo_banco
     if (tableTab === 'sistema') return resultado.summary.solo_sistema
-    if (tableTab === 'gastos') return resultado.summary.gastos
     return []
   }, [resultado, tableTab])
 
-  // --- Login ---
-  if (!isAuthenticated) {
-    return (
-      <div className="h-screen w-full bg-brand-dark flex items-center justify-center p-6">
-        <div className="card-premium p-10 max-w-md w-full animate-fade-in border-brand-blue/20 bg-brand-card/80 backdrop-blur-xl">
-          <div className="flex justify-center mb-8">
-            <div className="bg-brand-blue/20 p-4 rounded-3xl border border-brand-blue/30 shadow-2xl shadow-brand-blue/20">
-              <Lock className="text-brand-blue" size={40} />
-            </div>
-          </div>
-          <h1 className="text-2xl font-black text-center mb-2 tracking-tight">Acceso Seguro</h1>
-          <p className="text-slate-400 text-sm text-center mb-8">Introducí tu clave de acceso para ingresar al Conciliador Flow.</p>
-          <form onSubmit={handleLogin} className="space-y-4">
-            <input
-              type="password"
-              placeholder="Clave de acceso"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              className="w-full bg-brand-dark border border-white/10 rounded-2xl py-4 px-6 text-center text-lg font-bold tracking-widest focus:ring-2 focus:ring-brand-blue/30 outline-none transition-all"
-            />
-            <button type="submit" className="w-full bg-brand-blue hover:bg-blue-600 text-white py-4 rounded-2xl font-black text-sm tracking-widest shadow-xl shadow-brand-blue/20 transition-all active:scale-95">
-              ENTRAR AL SISTEMA
-            </button>
-          </form>
-          {loginError && <p className="text-rose-500 text-xs text-center mt-4 font-bold uppercase tracking-widest">{loginError}</p>}
-          <div className="mt-10 pt-8 border-t border-white/5 flex flex-col items-center">
-            <p className="text-[10px] text-slate-600 font-black uppercase tracking-widest">Mantenido por Pablo Ponti</p>
-          </div>
-        </div>
-      </div>
-    )
+  // --- Login screen ---
+  if (!token || !usuario) {
+    return <LoginScreen onLogin={handleLogin} error={loginError} />
   }
 
-  // --- App principal ---
+  const esAdmin = usuario.rol === 'admin'
+
   return (
     <div className="flex h-screen bg-brand-dark text-slate-100 font-sans overflow-hidden">
       {/* Sidebar */}
@@ -218,172 +171,61 @@ function App() {
           <div className="bg-brand-blue p-2.5 rounded-2xl shadow-lg shadow-brand-blue/30">
             <Activity className="text-white" size={26} />
           </div>
-          <span className="text-xl font-extrabold tracking-tight">Conciliador <span className="text-brand-blue">Flow</span></span>
+          <span className="text-xl font-extrabold tracking-tight">
+            Conciliador <span className="text-brand-blue">Flow</span>
+          </span>
         </div>
         <nav className="flex-1 px-4 space-y-2">
-          <SidebarLink active icon={<LayoutDashboard size={20}/>} label="Dashboard" />
+          <SidebarLink active={view === 'dashboard'} icon={<LayoutDashboard size={20}/>} label="Dashboard" onClick={() => setView('dashboard')} />
+          {esAdmin && (
+            <SidebarLink active={view === 'usuarios'} icon={<Users size={20}/>} label="Usuarios" onClick={() => setView('usuarios')} />
+          )}
         </nav>
-        <div className="px-4 pb-8">
-          <button onClick={handleLogout} className="flex items-center space-x-4 w-full px-6 py-4 rounded-2xl text-rose-500 hover:bg-rose-500/10 transition-all font-bold border-t border-white/5 pt-8">
-            <LogOut size={20}/> <span className="text-sm">Salir</span>
+        <div className="px-4 pb-8 border-t border-white/5 mt-4 pt-4">
+          <div className="px-6 py-3 mb-2">
+            <p className="text-xs font-black text-slate-300">{usuario.username}</p>
+            <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${esAdmin ? 'bg-brand-blue/20 text-brand-blue' : 'bg-slate-700 text-slate-400'}`}>
+              {usuario.rol}
+            </span>
+          </div>
+          <button onClick={handleLogout} className="flex items-center space-x-3 w-full px-6 py-3 rounded-2xl text-rose-500 hover:bg-rose-500/10 transition-all font-bold">
+            <LogOut size={18}/> <span className="text-sm">Cerrar sesión</span>
           </button>
         </div>
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col">
-        {/* Top Bar */}
-        <header className="h-20 flex items-center justify-between px-10 border-b border-white/5 bg-brand-dark/40 backdrop-blur-xl z-20">
-          <div className="flex items-center space-x-4">
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <header className="h-20 flex items-center justify-between px-10 border-b border-white/5 bg-brand-dark/40 backdrop-blur-xl z-20 shrink-0">
+          <div className="flex items-center space-x-3">
             <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl px-4 py-1.5 flex items-center space-x-2">
               <span className="text-[10px] font-black text-emerald-500 uppercase">Online</span>
-              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full shadow-lg shadow-emerald-500/50"></div>
+              <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></div>
             </div>
-            <p className="text-xs text-slate-500 font-bold hidden md:block">{API_BASE_URL}</p>
           </div>
-          <UserProfile name="P. Ponti" role="Admin" />
+          <div className="flex items-center space-x-3">
+            {esAdmin && <Shield size={16} className="text-brand-blue" title="Administrador" />}
+            <p className="text-sm font-black">{usuario.username}</p>
+          </div>
         </header>
 
-        {/* Content */}
         <main className="flex-1 overflow-y-auto p-10 space-y-10 scrollbar-hide">
-          <div>
-            <h2 className="text-4xl font-black tracking-tight mb-2">Conciliación Bancaria</h2>
-            <p className="text-slate-400 font-medium">Procesá extractos y mayores contables para detectar diferencias automáticamente.</p>
-          </div>
-
-          {/* KPIs */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            <KPICard label="Items Conciliados" value={resultado?.summary ? `${resultado.summary.n_conc}` : "—"} icon={<CheckCircle2 className="text-brand-blue"/>} />
-            <KPICard label="Diferencias" value={resultado?.summary ? `${resultado.summary.n_diff}` : "—"} icon={<AlertCircle className="text-amber-500"/>} />
-            <KPICard label="Total Gastos" value={resultado?.summary ? `$${resultado.summary.total_gastos.toLocaleString('es-AR')}` : "—"} icon={<Layers className="text-emerald-500"/>} />
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-            {/* Gráfico */}
-            <div className="lg:col-span-8">
-              <Card title="Distribución de Resultados">
-                <div className="h-64 mt-4">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
-                        {pieData.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
-                      </Pie>
-                      <Legend iconType="circle" />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              </Card>
-            </div>
-
-            {/* Upload */}
-            <div className="lg:col-span-4 card-premium p-8 flex flex-col bg-brand-card/30 border-white/5">
-              <h3 className="text-lg font-bold mb-6 flex items-center space-x-2">
-                <Upload size={20} className="text-brand-blue" />
-                <span>Cargar Archivos</span>
-              </h3>
-              <div
-                className="flex-1 border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center p-6 hover:bg-white/2 transition-all"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault()
-                  agregarArchivos(Array.from(e.dataTransfer.files))
-                }}
-              >
-                <div className="mb-4 space-y-2 w-full">
-                  {extractos.map((f, i) => (
-                    <FileBadge key={`ext-${i}`} name={f.name} tag="PDF" onRemove={() => setExtractos(prev => prev.filter((_, idx) => idx !== i))} />
-                  ))}
-                  {mayores.map((f, i) => (
-                    <FileBadge key={`may-${i}`} name={f.name} tag="XLS" onRemove={() => setMayores(prev => prev.filter((_, idx) => idx !== i))} />
-                  ))}
-                </div>
-                <input
-                  type="file"
-                  multiple
-                  id="file_btn"
-                  accept=".pdf,.xlsx,.xls"
-                  className="hidden"
-                  onChange={(e) => agregarArchivos(Array.from(e.target.files))}
-                />
-                <label htmlFor="file_btn" className="bg-brand-blue text-white px-8 py-3 rounded-2xl font-black text-xs hover:bg-blue-600 cursor-pointer transition-all shadow-xl shadow-brand-blue/30">
-                  SELECCIONAR ARCHIVOS
-                </label>
-                <p className="text-[10px] text-slate-600 mt-3 text-center">PDF = extractos · XLSX/XLS = mayores<br/>Máx. {MAX_FILE_SIZE_MB} MB por archivo</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Controles */}
-          <div className="flex flex-col items-center space-y-6">
-            <div className="flex bg-brand-card/50 p-2 rounded-2xl border border-white/5 px-6">
-              <select value={banco} onChange={(e) => setBanco(e.target.value)} className="bg-transparent text-sm font-black focus:outline-none focus:text-brand-blue cursor-pointer">
-                {BANCOS.map(b => <option key={b} value={b} className="bg-brand-card">{b}</option>)}
-              </select>
-            </div>
-            <button
-              onClick={handleConciliar}
-              disabled={loading}
-              className={`w-full max-w-xl py-5 rounded-3xl font-black text-xl flex items-center justify-center space-x-4 shadow-2xl transition-all active:scale-95 ${loading ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-brand-blue hover:bg-blue-600 shadow-brand-blue/30'}`}
-            >
-              {loading ? <LoadingSpinner texto="Procesando..." /> : <><CheckCircle2 size={24}/><span>INICIAR CONCILIACIÓN</span></>}
-            </button>
-            {error && <p className="text-rose-400 font-bold text-sm tracking-widest uppercase text-center max-w-xl">{error}</p>}
-          </div>
-
-          {/* Resultados */}
-          {resultado && (
-            <div className="animate-fade-in space-y-10">
-              <div className="card-premium p-10 bg-gradient-to-br from-emerald-500/10 to-transparent border-emerald-500/20 text-center">
-                <h3 className="text-3xl font-black mb-2">Reporte Generado</h3>
-                <p className="text-slate-400 text-sm mb-6">{resultado.banco} · {resultado.summary.titular}</p>
-                <button
-                  onClick={handleDownload}
-                  disabled={downloading}
-                  className={`px-12 py-5 rounded-3xl font-black text-xl flex items-center space-x-4 mx-auto shadow-2xl transition-all ${downloading ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/30 hover:scale-105'}`}
-                >
-                  {downloading ? <LoadingSpinner texto="Descargando..." /> : <><Download size={24}/><span>DESCARGAR EXCEL</span></>}
-                </button>
-              </div>
-
-              <div className="card-premium overflow-hidden">
-                <div className="p-8 border-b border-white/5 flex gap-4">
-                  <TabBtn active={tableTab === 'banco'} onClick={() => setTableTab('banco')} label="Solo en Banco" count={resultado.summary.n_banco} />
-                  <TabBtn active={tableTab === 'sistema'} onClick={() => setTableTab('sistema')} label="Solo en Sistema" count={resultado.summary.n_sist} />
-                </div>
-                {tableData.length === 0 ? (
-                  <p className="text-slate-500 text-center py-16 font-bold">Sin movimientos sin conciliar ✓</p>
-                ) : (
-                  <div className="overflow-x-auto max-h-[500px]">
-                    <table className="w-full text-left text-sm">
-                      <thead className="sticky top-0 bg-brand-card border-b border-white/5 text-slate-500 font-bold">
-                        <tr>
-                          <th className="px-8 py-5">Fecha</th>
-                          <th className="px-8 py-5">Concepto</th>
-                          <th className="px-8 py-5 text-right">Monto</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-white/5">
-                        {tableData.map((row, i) => {
-                          const monto = typeof row.monto === 'number' ? row.monto : 0
-                          return (
-                            <tr key={i} className="hover:bg-white/2 transition-all">
-                              <td className="px-8 py-5 text-slate-400">{row.fecha}</td>
-                              <td className="px-8 py-5 font-bold">{row.concepto}</td>
-                              <td className={`px-8 py-5 text-right font-black ${monto < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
-                                ${monto.toLocaleString('es-AR')}
-                              </td>
-                            </tr>
-                          )
-                        })}
-                      </tbody>
-                    </table>
-                    {tableData.length >= 100 && (
-                      <p className="text-center text-slate-600 text-xs py-4">Mostrando los primeros 100 resultados. Descargá el Excel para ver todos.</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
+          {view === 'dashboard' && (
+            <Dashboard
+              banco={banco} setBanco={setBanco}
+              extractos={extractos} setExtractos={setExtractos}
+              mayores={mayores} setMayores={setMayores}
+              agregarArchivos={agregarArchivos}
+              loading={loading} downloading={downloading}
+              resultado={resultado} error={error}
+              tableTab={tableTab} setTableTab={setTableTab}
+              tableData={tableData} pieData={pieData}
+              onConciliar={handleConciliar}
+              onDownload={handleDownload}
+            />
+          )}
+          {view === 'usuarios' && esAdmin && (
+            <PanelUsuarios usuario={usuario} />
           )}
         </main>
       </div>
@@ -391,17 +233,377 @@ function App() {
   )
 }
 
-// --- Sub-componentes ---
+// ============================================================
+// LOGIN
+// ============================================================
+function LoginScreen({ onLogin, error }) {
+  const [username, setUsername] = useState('')
+  const [password, setPassword] = useState('')
+  const [showPass, setShowPass] = useState(false)
+
+  const submit = (e) => {
+    e.preventDefault()
+    if (!username.trim() || !password) return
+    onLogin({ username: username.trim(), password })
+  }
+
+  return (
+    <div className="h-screen w-full bg-brand-dark flex items-center justify-center p-6">
+      <div className="card-premium p-10 max-w-md w-full animate-fade-in bg-brand-card/80 backdrop-blur-xl">
+        <div className="flex justify-center mb-8">
+          <div className="bg-brand-blue/20 p-4 rounded-3xl border border-brand-blue/30">
+            <Lock className="text-brand-blue" size={40} />
+          </div>
+        </div>
+        <h1 className="text-2xl font-black text-center mb-1 tracking-tight">Conciliador Flow</h1>
+        <p className="text-slate-400 text-sm text-center mb-8">Ingresá con tu usuario y contraseña.</p>
+        <form onSubmit={submit} className="space-y-4">
+          <input
+            type="text" placeholder="Usuario" value={username}
+            onChange={e => setUsername(e.target.value)}
+            className="w-full bg-brand-dark border border-white/10 rounded-2xl py-4 px-6 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none transition-all"
+          />
+          <div className="relative">
+            <input
+              type={showPass ? 'text' : 'password'} placeholder="Contraseña" value={password}
+              onChange={e => setPassword(e.target.value)}
+              className="w-full bg-brand-dark border border-white/10 rounded-2xl py-4 px-6 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none transition-all pr-14"
+            />
+            <button type="button" onClick={() => setShowPass(p => !p)}
+              className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300">
+              {showPass ? <EyeOff size={18}/> : <Eye size={18}/>}
+            </button>
+          </div>
+          <button type="submit"
+            className="w-full bg-brand-blue hover:bg-blue-600 text-white py-4 rounded-2xl font-black text-sm tracking-widest shadow-xl transition-all active:scale-95">
+            INGRESAR
+          </button>
+        </form>
+        {error && <p className="text-rose-500 text-xs text-center mt-4 font-bold">{error}</p>}
+        <p className="text-[10px] text-slate-600 text-center mt-8">Mantenido por Pablo Ponti</p>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================
+// DASHBOARD
+// ============================================================
+function Dashboard({
+  banco, setBanco, extractos, setExtractos, mayores, setMayores,
+  agregarArchivos, loading, downloading, resultado, error,
+  tableTab, setTableTab, tableData, pieData, onConciliar, onDownload
+}) {
+  return (
+    <>
+      <div>
+        <h2 className="text-4xl font-black tracking-tight mb-2">Conciliación Bancaria</h2>
+        <p className="text-slate-400 font-medium">Procesá extractos y mayores para detectar diferencias.</p>
+      </div>
+
+      {/* KPIs */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+        <KPICard label="Conciliados" value={resultado?.summary ? `${resultado.summary.n_conc}` : "—"} icon={<CheckCircle2 className="text-brand-blue"/>} />
+        <KPICard label="Diferencias" value={resultado?.summary ? `${resultado.summary.n_diff}` : "—"} icon={<AlertCircle className="text-amber-500"/>} />
+        <KPICard label="Total Gastos" value={resultado?.summary ? `$${resultado.summary.total_gastos.toLocaleString('es-AR')}` : "—"} icon={<Layers className="text-emerald-500"/>} />
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+        {/* Gráfico */}
+        <div className="lg:col-span-8">
+          <Card title="Distribución de Resultados">
+            <div className="h-64 mt-4">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie data={pieData} cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value">
+                    {pieData.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
+                  </Pie>
+                  <Legend iconType="circle" />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+          </Card>
+        </div>
+
+        {/* Upload */}
+        <div className="lg:col-span-4 card-premium p-8 flex flex-col bg-brand-card/30 border-white/5">
+          <h3 className="text-lg font-bold mb-6 flex items-center space-x-2">
+            <Upload size={20} className="text-brand-blue" /><span>Cargar Archivos</span>
+          </h3>
+          <div className="flex-1 border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center p-6 hover:bg-white/2 transition-all"
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => { e.preventDefault(); agregarArchivos(Array.from(e.dataTransfer.files)) }}>
+            <div className="mb-4 space-y-2 w-full">
+              {extractos.map((f, i) => <FileBadge key={`e${i}`} name={f.name} tag="PDF" onRemove={() => setExtractos(p => p.filter((_, x) => x !== i))} />)}
+              {mayores.map((f, i) => <FileBadge key={`m${i}`} name={f.name} tag="XLS" onRemove={() => setMayores(p => p.filter((_, x) => x !== i))} />)}
+            </div>
+            <input type="file" multiple id="file_btn" accept=".pdf,.xlsx,.xls" className="hidden"
+              onChange={e => agregarArchivos(Array.from(e.target.files))} />
+            <label htmlFor="file_btn" className="bg-brand-blue text-white px-8 py-3 rounded-2xl font-black text-xs hover:bg-blue-600 cursor-pointer transition-all shadow-xl">
+              SELECCIONAR ARCHIVOS
+            </label>
+            <p className="text-[10px] text-slate-600 mt-3 text-center">PDF = extractos · XLSX/XLS = mayores<br/>Máx. {MAX_FILE_SIZE_MB} MB</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Controles */}
+      <div className="flex flex-col items-center space-y-6">
+        <div className="flex bg-brand-card/50 p-2 rounded-2xl border border-white/5 px-6">
+          <select value={banco} onChange={e => setBanco(e.target.value)} className="bg-transparent text-sm font-black focus:outline-none focus:text-brand-blue cursor-pointer">
+            {BANCOS.map(b => <option key={b} value={b} className="bg-brand-card">{b}</option>)}
+          </select>
+        </div>
+        <button onClick={onConciliar} disabled={loading}
+          className={`w-full max-w-xl py-5 rounded-3xl font-black text-xl flex items-center justify-center space-x-4 shadow-2xl transition-all active:scale-95 ${loading ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-brand-blue hover:bg-blue-600 shadow-brand-blue/30'}`}>
+          {loading ? <Spinner texto="Procesando..." /> : <><CheckCircle2 size={24}/><span>INICIAR CONCILIACIÓN</span></>}
+        </button>
+        {error && <p className="text-rose-400 font-bold text-sm text-center max-w-xl">{error}</p>}
+      </div>
+
+      {/* Resultado */}
+      {resultado && (
+        <div className="animate-fade-in space-y-10">
+          <div className="card-premium p-10 bg-gradient-to-br from-emerald-500/10 to-transparent border-emerald-500/20 text-center">
+            <h3 className="text-3xl font-black mb-2">Reporte Generado</h3>
+            <p className="text-slate-400 text-sm mb-6">{resultado.banco} · {resultado.summary.titular}</p>
+            <button onClick={onDownload} disabled={downloading}
+              className={`px-12 py-5 rounded-3xl font-black text-xl flex items-center space-x-4 mx-auto shadow-2xl transition-all ${downloading ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/30 hover:scale-105'}`}>
+              {downloading ? <Spinner texto="Descargando..." /> : <><Download size={24}/><span>DESCARGAR EXCEL</span></>}
+            </button>
+          </div>
+
+          <div className="card-premium overflow-hidden">
+            <div className="p-8 border-b border-white/5 flex gap-4">
+              <TabBtn active={tableTab === 'banco'} onClick={() => setTableTab('banco')} label="Solo en Banco" count={resultado.summary.n_banco} />
+              <TabBtn active={tableTab === 'sistema'} onClick={() => setTableTab('sistema')} label="Solo en Sistema" count={resultado.summary.n_sist} />
+            </div>
+            {tableData.length === 0 ? (
+              <p className="text-slate-500 text-center py-16 font-bold">Sin movimientos sin conciliar ✓</p>
+            ) : (
+              <div className="overflow-x-auto max-h-[500px]">
+                <table className="w-full text-left text-sm">
+                  <thead className="sticky top-0 bg-brand-card border-b border-white/5 text-slate-500 font-bold">
+                    <tr>
+                      <th className="px-8 py-5">Fecha</th>
+                      <th className="px-8 py-5">Concepto</th>
+                      <th className="px-8 py-5 text-right">Monto</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5">
+                    {tableData.map((row, i) => {
+                      const monto = typeof row.monto === 'number' ? row.monto : 0
+                      return (
+                        <tr key={i} className="hover:bg-white/2 transition-all">
+                          <td className="px-8 py-5 text-slate-400">{row.fecha}</td>
+                          <td className="px-8 py-5 font-bold">{row.concepto}</td>
+                          <td className={`px-8 py-5 text-right font-black ${monto < 0 ? 'text-rose-400' : 'text-emerald-400'}`}>
+                            ${monto.toLocaleString('es-AR')}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+                {tableData.length >= 100 && (
+                  <p className="text-center text-slate-600 text-xs py-4">Mostrando primeros 100. Descargá el Excel para ver todos.</p>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
+// ============================================================
+// PANEL USUARIOS (admin)
+// ============================================================
+function PanelUsuarios({ usuario: adminActual }) {
+  const [usuarios, setUsuarios] = useState([])
+  const [cargando, setCargando] = useState(true)
+  const [error, setError] = useState(null)
+  const [showForm, setShowForm] = useState(false)
+  const [form, setForm] = useState({ username: '', password: '', rol: 'usuario' })
+  const [formError, setFormError] = useState(null)
+  const [guardando, setGuardando] = useState(false)
+
+  const cargar = useCallback(async () => {
+    setCargando(true); setError(null)
+    try {
+      const r = await api.get('/auth/usuarios')
+      setUsuarios(r.data)
+    } catch { setError("Error al cargar usuarios.") }
+    finally { setCargando(false) }
+  }, [])
+
+  useEffect(() => { cargar() }, [cargar])
+
+  const crearUsuario = async (e) => {
+    e.preventDefault()
+    setFormError(null)
+    if (!form.username.trim() || form.password.length < 6) {
+      setFormError("Usuario requerido y contraseña mínimo 6 caracteres.")
+      return
+    }
+    setGuardando(true)
+    try {
+      await api.post('/auth/usuarios', form)
+      setShowForm(false)
+      setForm({ username: '', password: '', rol: 'usuario' })
+      cargar()
+    } catch (err) {
+      setFormError(err.response?.data?.detail || "Error al crear usuario.")
+    } finally { setGuardando(false) }
+  }
+
+  const toggleActivo = async (u) => {
+    try {
+      await api.put(`/auth/usuarios/${u.username}`, { activo: !u.activo })
+      cargar()
+    } catch (err) {
+      setError(err.response?.data?.detail || "Error al actualizar usuario.")
+    }
+  }
+
+  const eliminar = async (username) => {
+    if (!confirm(`¿Eliminar usuario "${username}"?`)) return
+    try {
+      await api.delete(`/auth/usuarios/${username}`)
+      cargar()
+    } catch (err) {
+      setError(err.response?.data?.detail || "Error al eliminar.")
+    }
+  }
+
+  return (
+    <div className="space-y-8">
+      <div className="flex items-end justify-between">
+        <div>
+          <h2 className="text-4xl font-black tracking-tight mb-2">Gestión de Usuarios</h2>
+          <p className="text-slate-400">Administrá los accesos al sistema.</p>
+        </div>
+        <div className="flex gap-3">
+          <button onClick={cargar} className="p-3 rounded-2xl bg-brand-card/50 border border-white/10 hover:bg-white/5 transition-all text-slate-400">
+            <RefreshCw size={18} />
+          </button>
+          <button onClick={() => setShowForm(s => !s)}
+            className="flex items-center space-x-2 bg-brand-blue hover:bg-blue-600 text-white px-6 py-3 rounded-2xl font-black text-sm transition-all">
+            <Plus size={18}/><span>NUEVO USUARIO</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Formulario nuevo usuario */}
+      {showForm && (
+        <div className="card-premium p-8 border-brand-blue/20">
+          <h3 className="font-black text-lg mb-6">Crear usuario</h3>
+          <form onSubmit={crearUsuario} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <input type="text" placeholder="Nombre de usuario" value={form.username}
+              onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+              className="bg-brand-dark border border-white/10 rounded-2xl py-3 px-5 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none" />
+            <input type="password" placeholder="Contraseña (mín. 6 caracteres)" value={form.password}
+              onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+              className="bg-brand-dark border border-white/10 rounded-2xl py-3 px-5 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none" />
+            <select value={form.rol} onChange={e => setForm(f => ({ ...f, rol: e.target.value }))}
+              className="bg-brand-dark border border-white/10 rounded-2xl py-3 px-5 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none cursor-pointer">
+              <option value="usuario">Usuario</option>
+              <option value="admin">Administrador</option>
+            </select>
+            {formError && <p className="text-rose-400 text-sm font-bold md:col-span-3">{formError}</p>}
+            <div className="md:col-span-3 flex gap-3">
+              <button type="submit" disabled={guardando}
+                className="bg-brand-blue hover:bg-blue-600 text-white px-8 py-3 rounded-2xl font-black text-sm transition-all disabled:opacity-50">
+                {guardando ? 'Guardando...' : 'CREAR'}
+              </button>
+              <button type="button" onClick={() => setShowForm(false)}
+                className="px-8 py-3 rounded-2xl font-black text-sm text-slate-400 hover:text-white border border-white/10 transition-all">
+                CANCELAR
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
+
+      {error && <p className="text-rose-400 font-bold">{error}</p>}
+
+      {/* Tabla de usuarios */}
+      <div className="card-premium overflow-hidden">
+        <table className="w-full text-sm">
+          <thead className="bg-brand-card border-b border-white/5 text-slate-500 font-bold">
+            <tr>
+              <th className="px-8 py-5 text-left">Usuario</th>
+              <th className="px-8 py-5 text-left">Rol</th>
+              <th className="px-8 py-5 text-left">Estado</th>
+              <th className="px-8 py-5 text-left">Último login</th>
+              <th className="px-8 py-5 text-left">Creado</th>
+              <th className="px-8 py-5 text-right">Acciones</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-white/5">
+            {cargando ? (
+              <tr><td colSpan={6} className="text-center py-12 text-slate-500">Cargando...</td></tr>
+            ) : usuarios.map(u => (
+              <tr key={u.id} className="hover:bg-white/2 transition-all">
+                <td className="px-8 py-5 font-black flex items-center space-x-3">
+                  <User size={16} className="text-slate-500" />
+                  <span>{u.username}</span>
+                  {u.username === adminActual.username && (
+                    <span className="text-[9px] bg-brand-blue/20 text-brand-blue px-2 py-0.5 rounded-full font-black">TÚ</span>
+                  )}
+                </td>
+                <td className="px-8 py-5">
+                  <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${u.rol === 'admin' ? 'bg-brand-blue/20 text-brand-blue' : 'bg-slate-700 text-slate-400'}`}>
+                    {u.rol}
+                  </span>
+                </td>
+                <td className="px-8 py-5">
+                  <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${u.activo ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
+                    {u.activo ? 'Activo' : 'Inactivo'}
+                  </span>
+                </td>
+                <td className="px-8 py-5 text-slate-400 text-xs">
+                  {u.ultimo_login ? new Date(u.ultimo_login).toLocaleString('es-AR') : '—'}
+                </td>
+                <td className="px-8 py-5 text-slate-400 text-xs">
+                  {new Date(u.creado_en).toLocaleDateString('es-AR')}
+                </td>
+                <td className="px-8 py-5 text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    {u.username !== adminActual.username && (
+                      <>
+                        <button onClick={() => toggleActivo(u)}
+                          className={`text-xs font-black px-4 py-1.5 rounded-xl transition-all ${u.activo ? 'bg-amber-500/10 text-amber-400 hover:bg-amber-500/20' : 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'}`}>
+                          {u.activo ? 'Desactivar' : 'Activar'}
+                        </button>
+                        <button onClick={() => eliminar(u.username)}
+                          className="p-2 rounded-xl text-slate-600 hover:text-rose-500 hover:bg-rose-500/10 transition-all">
+                          <Trash2 size={15}/>
+                        </button>
+                      </>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+// --- Sub-componentes reutilizables ---
 function KPICard({ label, value, icon }) {
   return (
-    <div className="card-premium p-8 group hover:border-brand-blue/30 transition-all">
+    <div className="card-premium p-8 hover:border-brand-blue/30 transition-all">
       <div className="bg-brand-dark/40 p-3 rounded-2xl border border-white/5 mb-6 w-fit">{icon}</div>
       <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{label}</p>
       <p className="text-3xl font-black tracking-tighter">{value}</p>
     </div>
   )
 }
-
 function SidebarLink({ icon, label, active, onClick }) {
   return (
     <button onClick={onClick} className={`flex items-center space-x-4 w-full px-6 py-4 rounded-2xl transition-all ${active ? 'bg-brand-blue/10 text-brand-blue font-black' : 'text-slate-500 hover:text-slate-300'}`}>
@@ -409,7 +611,6 @@ function SidebarLink({ icon, label, active, onClick }) {
     </button>
   )
 }
-
 function Card({ title, children }) {
   return (
     <div className="card-premium p-8 bg-brand-card/30 flex flex-col">
@@ -418,7 +619,6 @@ function Card({ title, children }) {
     </div>
   )
 }
-
 function FileBadge({ name, tag, onRemove }) {
   return (
     <div className="flex items-center justify-between bg-white/5 border border-white/5 rounded-xl px-4 py-2">
@@ -431,30 +631,14 @@ function FileBadge({ name, tag, onRemove }) {
     </div>
   )
 }
-
 function TabBtn({ active, onClick, label, count }) {
   return (
-    <button onClick={onClick} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-brand-blue text-white shadow-lg' : 'text-slate-500 hover:text-slate-300'}`}>
+    <button onClick={onClick} className={`px-5 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${active ? 'bg-brand-blue text-white' : 'text-slate-500 hover:text-slate-300'}`}>
       {label} <span className="ml-2 opacity-50">{count}</span>
     </button>
   )
 }
-
-function UserProfile({ name, role }) {
-  return (
-    <div className="flex items-center space-x-4">
-      <div className="text-right">
-        <p className="text-sm font-black leading-tight">{name}</p>
-        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">{role}</p>
-      </div>
-      <div className="h-10 w-10 rounded-2xl bg-brand-blue/20 border border-brand-blue/20 flex items-center justify-center">
-        <User className="text-brand-blue" size={24}/>
-      </div>
-    </div>
-  )
-}
-
-function LoadingSpinner({ texto }) {
+function Spinner({ texto }) {
   return (
     <div className="flex items-center space-x-4">
       <div className="w-6 h-6 border-4 border-slate-700 border-t-white rounded-full animate-spin"></div>
@@ -462,5 +646,3 @@ function LoadingSpinner({ texto }) {
     </div>
   )
 }
-
-export default App

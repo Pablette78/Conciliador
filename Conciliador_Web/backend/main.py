@@ -3,28 +3,25 @@ import sys
 import shutil
 import tempfile
 import uuid
-import logging
 import re
 from typing import List
 from datetime import datetime
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Header
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
-# --- Logging ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
-logger = logging.getLogger("conciliador")
+from logger import get_logger
+from auth import init_db, get_usuario_actual, require_admin, router as auth_router
 
-# --- Entornos e Importaciones ---
+logger = get_logger("conciliador.main")
+
+# --- Rutas de importación (local + Docker) ---
 sys.path.append(os.path.abspath("../../Conciliador_v10"))
-sys.path.append(os.path.abspath("./Conciliador_v10"))  # Para el contenedor Docker
+sys.path.append(os.path.abspath("./Conciliador_v10"))
 
 try:
-    from core.models import DatosExtracto, Movimiento, ItemConciliado
+    from core.models import Movimiento
     from core.factory import FabricaParsers
     from core.engine import MotorConciliacion
     from core.utils import combinar_extractos, combinar_mayores
@@ -36,26 +33,17 @@ except ImportError:
     from backend.generador_excel import generar_excel
     from backend.detector_banco import detectar_banco_con_confianza
 
-app = FastAPI(title="Conciliador Bancario API")
+# --- App ---
+app = FastAPI(title="Conciliador Bancario API", version="2.0")
 
-# --- Seguridad ---
-# REQUERIDO: definir API_KEY como variable de entorno en producción.
-# Sin ella, el servidor levanta pero todas las rutas protegidas devuelven 403.
-API_KEY = os.getenv("API_KEY", "")
-if not API_KEY:
-    logger.warning(
-        "API_KEY no configurada. Define la variable de entorno API_KEY antes de exponer el servidor."
-    )
+# Inicializar base de datos de usuarios al arrancar
+@app.on_event("startup")
+async def startup():
+    init_db()
+    logger.info("Base de datos de usuarios inicializada.")
 
-MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
-MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-ALLOWED_EXTENSIONS = {".pdf", ".xlsx", ".xls"}
-UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
-
-async def verify_api_key(x_api_key: str = Header(None)):
-    if not API_KEY or x_api_key != API_KEY:
-        raise HTTPException(status_code=403, detail="Clave de acceso no válida o inexistente.")
-    return x_api_key
+# Registrar rutas de autenticación
+app.include_router(auth_router)
 
 # --- CORS ---
 allowed_origins = list({
@@ -69,42 +57,41 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
-    allow_headers=["Content-Type", "X-API-KEY"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
-# Directorio persistente para resultados descargables
+# --- Constantes ---
+MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
+MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
+ALLOWED_EXTENSIONS = {".pdf", ".xlsx", ".xls"}
+UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.I)
 RESULTS_DIR = tempfile.mkdtemp(prefix="conciliador_results_")
-logger.info(f"Directorio de resultados: {RESULTS_DIR}")
+COLORES_CATEGORIA = ["#3B82F6", "#F59E0B", "#10B981", "#6366F1", "#EC4899"]
 
 
+# --- Helpers ---
 def _validar_archivo(file: UploadFile) -> None:
-    """Valida extensión y nombre de archivo. Lanza HTTPException si no es válido."""
     nombre = file.filename or ""
     ext = os.path.splitext(nombre)[-1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=400,
-            detail=f"Tipo de archivo no permitido: '{nombre}'. Solo se aceptan PDF, XLSX y XLS."
+            detail=f"Tipo de archivo no permitido: '{nombre}'. Solo PDF, XLSX y XLS."
         )
-    # Sanitizar nombre: solo caracteres seguros
-    nombre_seguro = re.sub(r'[^\w.\-]', '_', nombre)
-    if nombre_seguro != nombre:
-        logger.warning(f"Nombre de archivo sanitizado: '{nombre}' -> '{nombre_seguro}'")
 
 
 async def _guardar_archivo(file: UploadFile, destino: str) -> None:
-    """Lee el archivo en chunks, valida el tamaño y lo guarda en destino."""
     tamanio = 0
     with open(destino, "wb") as buf:
-        while chunk := await file.read(1024 * 1024):  # leer en bloques de 1MB
+        while chunk := await file.read(1024 * 1024):
             tamanio += len(chunk)
             if tamanio > MAX_FILE_SIZE_BYTES:
                 buf.close()
                 os.remove(destino)
                 raise HTTPException(
                     status_code=413,
-                    detail=f"Archivo demasiado grande. Máximo permitido: {MAX_FILE_SIZE_MB} MB."
+                    detail=f"Archivo demasiado grande. Máximo: {MAX_FILE_SIZE_MB} MB."
                 )
             buf.write(chunk)
 
@@ -118,100 +105,88 @@ def mov_to_dict(m: Movimiento) -> dict:
         "descripcion": m.descripcion,
         "tipo": m.tipo,
         "referencia": m.referencia,
-        "monto": m.monto
+        "monto": m.monto,
     }
 
 
+# --- Endpoints ---
 @app.get("/")
 async def root():
-    return {"status": "online", "message": "Conciliador Bancario API v10 Cloud"}
+    return {"status": "online", "version": "2.0"}
 
 
-@app.post("/api/conciliar", dependencies=[Depends(verify_api_key)])
+@app.post("/api/conciliar")
 async def conciliar(
     banco: str = Form(...),
     extractos: List[UploadFile] = File(...),
-    mayores: List[UploadFile] = File(...)
+    mayores: List[UploadFile] = File(...),
+    usuario: dict = Depends(get_usuario_actual),
 ):
+    logger.info(f"Conciliación iniciada por '{usuario['username']}' | banco={banco}")
     proc_dir = tempfile.mkdtemp()
     try:
-        # 1. Validar y guardar extractos
-        for file in extractos:
-            _validar_archivo(file)
-        for file in mayores:
-            _validar_archivo(file)
+        # Validar archivos
+        for f in extractos + mayores:
+            _validar_archivo(f)
 
+        # Guardar extractos
         ruta_extractos = []
         for file in extractos:
-            nombre_seguro = re.sub(r'[^\w.\-]', '_', file.filename or "extracto")
-            ruta = os.path.join(proc_dir, f"ext_{nombre_seguro}")
+            nombre = re.sub(r'[^\w.\-]', '_', file.filename or "extracto")
+            ruta = os.path.join(proc_dir, f"ext_{nombre}")
             await _guardar_archivo(file, ruta)
             ruta_extractos.append(ruta)
 
+        # Guardar mayores
         ruta_mayores = []
         for file in mayores:
-            nombre_seguro = re.sub(r'[^\w.\-]', '_', file.filename or "mayor")
-            ruta = os.path.join(proc_dir, f"may_{nombre_seguro}")
+            nombre = re.sub(r'[^\w.\-]', '_', file.filename or "mayor")
+            ruta = os.path.join(proc_dir, f"may_{nombre}")
             await _guardar_archivo(file, ruta)
             ruta_mayores.append(ruta)
 
-        # 2. Detectar banco
+        # Detectar banco
         banco_final = banco
         if banco == "— auto —":
             for r in ruta_extractos:
                 b_det, conf = detectar_banco_con_confianza(r)
                 if b_det:
                     banco_final = b_det
-                    logger.info(f"Banco detectado automáticamente: {banco_final} (confianza: {conf})")
+                    logger.info(f"Banco detectado: {banco_final} (confianza: {conf})")
                     break
             if banco_final == "— auto —":
                 raise HTTPException(status_code=400, detail="No se pudo detectar el banco automáticamente.")
 
-        # 3. Parsear extractos
+        # Parsear extractos
         lista_datos = []
         for ruta in ruta_extractos:
             parser = FabricaParsers.obtener_parser(banco_final)
             if not parser:
-                logger.warning(f"No se encontró parser para banco: {banco_final}")
+                logger.warning(f"Sin parser para banco: {banco_final}")
                 continue
-            datos = parser.parse(ruta)
-            lista_datos.append(datos)
+            lista_datos.append(parser.parse(ruta))
 
         if not lista_datos:
-            raise HTTPException(
-                status_code=400,
-                detail=f"No se pudo parsear el extracto para el banco '{banco_final}'."
-            )
+            raise HTTPException(status_code=400, detail=f"No se pudo parsear el extracto para '{banco_final}'.")
 
         datos_comb = combinar_extractos(lista_datos)
 
-        # 4. Parsear mayores
-        lista_sistema = []
-        for ruta in ruta_mayores:
-            movs = parsear_excel(ruta)
-            lista_sistema.append(movs)
-        movs_sis = combinar_mayores(lista_sistema)
+        # Parsear mayores
+        movs_sis = combinar_mayores([parsear_excel(r) for r in ruta_mayores])
 
-        # 5. Conciliar
-        motor = MotorConciliacion()
-        resultado = motor.conciliar(datos_comb, movs_sis)
+        # Conciliar
+        resultado = MotorConciliacion().conciliar(datos_comb, movs_sis)
 
-        # 6. Generar Excel de resultado
+        # Generar Excel
         file_id = str(uuid.uuid4())
-        nombre_banco_seguro = re.sub(r'[^\w]', '_', banco_final)
-        filename = f"Conciliacion_{nombre_banco_seguro}.xlsx"
+        nombre_banco = re.sub(r'[^\w]', '_', banco_final)
+        filename = f"Conciliacion_{nombre_banco}.xlsx"
         ruta_resultado = os.path.join(RESULTS_DIR, f"{file_id}_{filename}")
         generar_excel(resultado, datos_comb, ruta_resultado, "Web", movimientos_sistema=movs_sis)
-        logger.info(f"Excel generado: {ruta_resultado}")
+        logger.info(f"Excel generado: {filename} por '{usuario['username']}'")
 
-        # 7. Respuesta
-        COLORES_CATEGORIA = ["#3B82F6", "#F59E0B", "#10B981", "#6366F1", "#EC4899"]
         pre_gastos = [
-            {
-                "categoria": cat,
-                "total": d["total"],
-                "color": COLORES_CATEGORIA[i % len(COLORES_CATEGORIA)]
-            }
+            {"categoria": cat, "total": d["total"], "color": COLORES_CATEGORIA[i % len(COLORES_CATEGORIA)]}
             for i, (cat, d) in enumerate(resultado.gastos_por_categoria.items())
         ]
 
@@ -230,36 +205,35 @@ async def conciliar(
                 "titular": datos_comb.titular or banco_final,
                 "solo_banco": [mov_to_dict(m) for m in resultado.solo_banco[:100]],
                 "solo_sistema": [mov_to_dict(m) for m in resultado.solo_sistema[:100]],
-                "gastos": pre_gastos
-            }
+                "gastos": pre_gastos,
+            },
         }
 
     except HTTPException:
         raise
-    except Exception as e:
+    except Exception:
         logger.exception("Error inesperado en /api/conciliar")
         raise HTTPException(status_code=500, detail="Error interno del servidor.")
     finally:
         shutil.rmtree(proc_dir, ignore_errors=True)
 
 
-@app.get("/api/download/{file_id}", dependencies=[Depends(verify_api_key)])
-async def download_file(file_id: str):
-    # Validar que file_id sea un UUID válido (evita path traversal)
+@app.get("/api/download/{file_id}")
+async def download_file(file_id: str, usuario: dict = Depends(get_usuario_actual)):
     if not UUID_RE.match(file_id):
-        raise HTTPException(status_code=400, detail="Identificador de archivo inválido.")
+        raise HTTPException(status_code=400, detail="Identificador inválido.")
 
     for f in os.listdir(RESULTS_DIR):
         if f.startswith(file_id):
             filepath = os.path.join(RESULTS_DIR, f)
-            # Verificar que el path resuelto esté dentro de RESULTS_DIR
             if not os.path.realpath(filepath).startswith(os.path.realpath(RESULTS_DIR)):
                 raise HTTPException(status_code=400, detail="Acceso no permitido.")
-            display_name = f[len(file_id) + 1:]  # quitar "uuid_" del inicio
+            display_name = f[len(file_id) + 1:]
+            logger.info(f"Descarga: {display_name} por '{usuario['username']}'")
             return FileResponse(
                 filepath,
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                filename=display_name
+                filename=display_name,
             )
     raise HTTPException(status_code=404, detail="Archivo no encontrado.")
 
