@@ -1,3 +1,5 @@
+import unicodedata
+
 from .parsers.santander import SantanderParser
 from .parsers.galicia import GaliciaParser
 from .parsers.generic import (
@@ -13,7 +15,15 @@ from .parsers.arca import ARCAParser
 from .parsers.amex import AmexParser
 from .parsers.visa import VisaParser
 
-# Mapeo normalizado: clave en MAYÚSCULAS → clase parser
+
+def _normalizar(texto: str) -> str:
+    """Pasa a mayúsculas y elimina tildes para comparación robusta."""
+    nfkd = unicodedata.normalize('NFKD', texto)
+    sin_tildes = ''.join(c for c in nfkd if not unicodedata.combining(c))
+    return sin_tildes.upper()
+
+
+# Mapeo normalizado (sin tildes, MAYÚSCULAS) → clase parser
 _PARSER_MAP = {
     "SANTANDER": SantanderParser,
     "GALICIA": GaliciaParser,
@@ -23,7 +33,7 @@ _PARSER_MAP = {
     "CORDOBA": BancorParser,
     "PROVINCIA": ProvinciaParser,
     "BAPRO": ProvinciaParser,
-    "NACION": NacionParser,
+    "NACION": NacionParser,       # matchea "Nación", "NACION", "Nacion"
     "CREDICOOP": CredicoopParser,
     "HSBC": HSBCParser,
     "ICBC": ICBCParser,
@@ -46,9 +56,8 @@ class FabricaParsers:
         if not nombre_banco:
             return None
 
-        b = nombre_banco.strip().upper()
+        b = _normalizar(nombre_banco.strip())
 
-        # Búsqueda exacta primero (después de normalizar)
         for clave, parser_cls in _PARSER_MAP.items():
             if clave in b:
                 return parser_cls()
