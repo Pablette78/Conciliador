@@ -4,3 +4,4 @@ xlrd==2.0.1
 customtkinter>=5.2.2
 tkinterdnd2>=0.4.3
 Pillow>=10.0.0
+bcrypt==4.0.1
