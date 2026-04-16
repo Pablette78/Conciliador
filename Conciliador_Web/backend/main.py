@@ -46,11 +46,17 @@ async def startup():
 app.include_router(auth_router)
 
 # --- CORS ---
+# FRONTEND_URL puede ser una lista separada por comas para múltiples dominios
+_frontend_url_env = os.getenv("FRONTEND_URL", "https://contaflex.ar")
+_extra_origins = [u.strip() for u in _frontend_url_env.split(",") if u.strip()]
+
 allowed_origins = list({
     "http://localhost:5173",
     "http://localhost:3000",
     "https://conciliador-virid.vercel.app",
-    os.getenv("FRONTEND_URL", "https://conciliador-virid.vercel.app"),
+    "https://www.contaflex.ar",
+    "https://contaflex.ar",
+    *_extra_origins,
 })
 
 app.add_middleware(
