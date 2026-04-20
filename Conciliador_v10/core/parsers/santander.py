@@ -81,6 +81,30 @@ class SantanderParser(BaseParser):
                 titular = linea.strip()
                 break
 
+        # ── 2b. Detectar saldo final desde texto de portada ───────────────────
+        # El PDF muestra "Saldo total en cuentas al DD/MM/AA" seguido de
+        # "$N.NNN.NNN,NN" — pero a veces el PDF omite la coma: "$N.NNN.NNNN"
+        # Regex permisivo: captura todo lo que sigue al $ hasta fin de token
+        PAT_SALDO_PORTADA = re.compile(r'\$\s*([\d.,]+)')
+        for i, linea in enumerate(lineas_texto[:15]):
+            if 'Saldo total en cuentas' in linea or 'Saldo total' in linea:
+                for j in range(i, min(i + 3, len(lineas_texto))):
+                    m = PAT_SALDO_PORTADA.search(lineas_texto[j])
+                    if m:
+                        raw = m.group(1).strip()
+                        try:
+                            if ',' in raw:
+                                # formato normal: 2.692.160,82
+                                saldo_final = float(raw.replace('.', '').replace(',', '.'))
+                            else:
+                                # formato roto: 2.692.16082 → últimos 2 dígitos = centavos
+                                digits = raw.replace('.', '')
+                                saldo_final = float(digits[:-2] + '.' + digits[-2:])
+                        except (ValueError, IndexError):
+                            pass
+                        break
+                break
+
         # ── 3. Agrupar palabras por fila (top redondeado) ─────────────────────
         filas: dict[tuple, list] = {}
         for w in todas_palabras:
