@@ -44,6 +44,7 @@ class UsuarioCreate(BaseModel):
     rol: str = "usuario"
 
 class UsuarioUpdate(BaseModel):
+    new_username: Optional[str] = None
     password: Optional[str] = None
     rol: Optional[str] = None
     activo: Optional[bool] = None
@@ -272,6 +273,9 @@ async def actualizar_usuario(username: str, data: UsuarioUpdate):
             raise HTTPException(status_code=404, detail="Usuario no encontrado.")
 
         sets, params = [], []
+        if data.new_username:
+            sets.append(f"username = {PL}")
+            params.append(data.new_username)
         if data.password:
             sets.append(f"password_h = {PL}")
             params.append(pwd_ctx.hash(data.password))

@@ -7,7 +7,7 @@ import {
   Upload, AlertCircle, Download, LayoutDashboard,
   CheckCircle2, Layers, Lock, LogOut, FileText,
   Activity, User, Trash2, Users, Plus, Shield,
-  Eye, EyeOff, RefreshCw, Sun, Moon
+  Eye, EyeOff, RefreshCw, Sun, Moon, Edit
 } from 'lucide-react'
 
 // --- Config ---
@@ -185,6 +185,7 @@ export default function App() {
         </div>
         <nav className="flex-1 px-4 space-y-2">
           <SidebarLink active={view === 'dashboard'} icon={<LayoutDashboard size={20}/>} label="Dashboard" onClick={() => setView('dashboard')} />
+          <SidebarLink active={view === 'perfil'} icon={<User size={20}/>} label="Mi Perfil" onClick={() => setView('perfil')} />
           {esAdmin && (
             <SidebarLink active={view === 'usuarios'} icon={<Users size={20}/>} label="Usuarios" onClick={() => setView('usuarios')} />
           )}
@@ -238,6 +239,9 @@ export default function App() {
               onConciliar={handleConciliar}
               onDownload={handleDownload}
             />
+          )}
+          {view === 'perfil' && (
+            <PanelPerfil usuario={usuario} setUsuario={setUsuario} onLogout={handleLogout} />
           )}
           {view === 'usuarios' && esAdmin && (
             <PanelUsuarios usuario={usuario} />
@@ -492,6 +496,7 @@ function PanelUsuarios({ usuario: adminActual }) {
   const [error, setError] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ username: '', password: '', rol: 'usuario' })
+  const [editingUser, setEditingUser] = useState(null)
   const [formError, setFormError] = useState(null)
   const [guardando, setGuardando] = useState(false)
 
@@ -506,22 +511,46 @@ function PanelUsuarios({ usuario: adminActual }) {
 
   useEffect(() => { cargar() }, [cargar])
 
-  const crearUsuario = async (e) => {
+  const guardarUsuario = async (e) => {
     e.preventDefault()
     setFormError(null)
-    if (!form.username.trim() || form.password.length < 6) {
-      setFormError("Usuario requerido y contraseña mínimo 6 caracteres.")
+    if (!form.username.trim()) {
+      setFormError("El nombre de usuario es obligatorio.")
       return
     }
+    
     setGuardando(true)
     try {
-      await api.post('/auth/usuarios', form)
+      if (editingUser) {
+        // Editar existente
+        await api.put(`/auth/usuarios/${editingUser}`, {
+          new_username: form.username !== editingUser ? form.username : undefined,
+          password: form.password ? form.password : undefined,
+          rol: form.rol
+        })
+      } else {
+        // Crear nuevo
+        if (form.password.length < 6) {
+          setFormError("La contraseña debe tener al menos 6 caracteres.")
+          setGuardando(false)
+          return
+        }
+        await api.post('/auth/usuarios', form)
+      }
+      
       setShowForm(false)
+      setEditingUser(null)
       setForm({ username: '', password: '', rol: 'usuario' })
       cargar()
     } catch (err) {
-      setFormError(err.response?.data?.detail || "Error al crear usuario.")
+      setFormError(err.response?.data?.detail || "Error al guardar usuario.")
     } finally { setGuardando(false) }
+  }
+
+  const prepararEdicion = (u) => {
+    setEditingUser(u.username)
+    setForm({ username: u.username, password: '', rol: u.rol })
+    setShowForm(true)
   }
 
   const toggleActivo = async (u) => {
@@ -564,12 +593,12 @@ function PanelUsuarios({ usuario: adminActual }) {
       {/* Formulario nuevo usuario */}
       {showForm && (
         <div className="card-premium p-8 border-brand-blue/20">
-          <h3 className="font-black text-lg mb-6">Crear usuario</h3>
-          <form onSubmit={crearUsuario} className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <h3 className="font-black text-lg mb-6">{editingUser ? `Editar usuario: ${editingUser}` : 'Crear usuario' }</h3>
+          <form onSubmit={guardarUsuario} className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <input type="text" placeholder="Nombre de usuario" value={form.username}
               onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
               className="bg-brand-dark border border-white/10 rounded-2xl py-3 px-5 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none" />
-            <input type="password" placeholder="Contraseña (mín. 6 caracteres)" value={form.password}
+            <input type="password" placeholder={editingUser ? "Nueva contraseña (opcional)" : "Contraseña (mín. 6 caracteres)"} value={form.password}
               onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
               className="bg-brand-dark border border-white/10 rounded-2xl py-3 px-5 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none" />
             <select value={form.rol} onChange={e => setForm(f => ({ ...f, rol: e.target.value }))}
@@ -581,9 +610,9 @@ function PanelUsuarios({ usuario: adminActual }) {
             <div className="md:col-span-3 flex gap-3">
               <button type="submit" disabled={guardando}
                 className="bg-brand-blue hover:bg-blue-600 text-white px-8 py-3 rounded-2xl font-black text-sm transition-all disabled:opacity-50">
-                {guardando ? 'Guardando...' : 'CREAR'}
+                {guardando ? 'Guardando...' : (editingUser ? 'ACTUALIZAR' : 'CREAR')}
               </button>
-              <button type="button" onClick={() => setShowForm(false)}
+              <button type="button" onClick={() => { setShowForm(false); setEditingUser(null); }}
                 className="px-8 py-3 rounded-2xl font-black text-sm text-slate-400 hover:text-white border border-white/10 transition-all">
                 CANCELAR
               </button>
@@ -637,6 +666,10 @@ function PanelUsuarios({ usuario: adminActual }) {
                 </td>
                 <td className="px-8 py-5 text-right">
                   <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => prepararEdicion(u)}
+                      className="p-2 rounded-xl text-slate-600 hover:text-brand-blue hover:bg-brand-blue/10 transition-all">
+                      <Edit size={15}/>
+                    </button>
                     {u.username !== adminActual.username && (
                       <>
                         <button onClick={() => toggleActivo(u)}
@@ -660,7 +693,75 @@ function PanelUsuarios({ usuario: adminActual }) {
   )
 }
 
-// --- Sub-componentes reutilizables ---
+// ============================================================
+// PANEL PERFIL
+// ============================================================
+function PanelPerfil({ usuario, setUsuario, onLogout }) {
+  const [form, setForm] = useState({ username: usuario.username, password: '' })
+  const [error, setError] = useState(null)
+  const [success, setSuccess] = useState(null)
+  const [guardando, setGuardando] = useState(false)
+
+  const guardar = async (e) => {
+    e.preventDefault()
+    setError(null); setSuccess(null)
+    if (!form.username.trim()) return setError("El nombre es requerido.")
+    
+    setGuardando(true)
+    try {
+      await api.put(`/auth/usuarios/${usuario.username}`, {
+        new_username: form.username !== usuario.username ? form.username : undefined,
+        password: form.password ? form.password : undefined
+      })
+      
+      setSuccess("Perfil actualizado.")
+      // Si cambió el nombre, hay que cerrar sesión o actualizar el token
+      if (form.username !== usuario.username) {
+        setTimeout(() => onLogout(), 2000)
+      } else {
+        setUsuario(u => ({ ...u, username: form.username }))
+      }
+    } catch (err) {
+      setError(err.response?.data?.detail || "Error al actualizar.")
+    } finally { setGuardando(false) }
+  }
+
+  return (
+    <div className="max-w-2xl mx-auto space-y-8 animate-fade-in">
+      <div>
+        <h2 className="text-4xl font-black tracking-tight mb-2 text-[var(--text-primary)]">Mi Perfil</h2>
+        <p className="text-[var(--text-secondary)]">Gestioná tu información personal y contraseña.</p>
+      </div>
+
+      <div className="card-premium p-10 space-y-8">
+        <form onSubmit={guardar} className="space-y-6">
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-slate-500">Nombre de Usuario</label>
+            <input type="text" value={form.username}
+              onChange={e => setForm(f => ({ ...f, username: e.target.value }))}
+              className="w-full bg-brand-dark border border-white/10 rounded-2xl py-4 px-6 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none" />
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-black uppercase text-slate-500">Nueva Contraseña (dejar en blanco para mantener)</label>
+            <input type="password" value={form.password}
+              onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+              className="w-full bg-brand-dark border border-white/10 rounded-2xl py-4 px-6 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none" />
+          </div>
+          
+          {error && <p className="text-rose-400 text-sm font-bold">{error}</p>}
+          {success && <p className="text-emerald-400 text-sm font-bold">{success}</p>}
+          {success && form.username !== usuario.username && <p className="text-amber-400 text-xs italic">Cerrando sesión para aplicar cambios...</p>}
+
+          <button type="submit" disabled={guardando}
+            className="bg-brand-blue hover:bg-blue-600 text-white px-10 py-4 rounded-2xl font-black text-sm transition-all shadow-xl disabled:opacity-50">
+            {guardando ? 'GUARDANDO...' : 'ACTUALIZAR PERFIL'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
 function KPICard({ label, value, icon }) {
   return (
     <div className="card-premium p-8 hover:border-brand-blue/30 transition-all">
