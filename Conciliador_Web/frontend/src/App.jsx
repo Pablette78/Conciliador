@@ -7,7 +7,7 @@ import {
   Upload, AlertCircle, Download, LayoutDashboard,
   CheckCircle2, Layers, Lock, LogOut, FileText,
   Activity, User, Trash2, Users, Plus, Shield,
-  Eye, EyeOff, RefreshCw
+  Eye, EyeOff, RefreshCw, Sun, Moon
 } from 'lucide-react'
 
 // --- Config ---
@@ -51,6 +51,7 @@ export default function App() {
   const [token, setToken]       = useState(() => sessionStorage.getItem('token'))
   const [usuario, setUsuario]   = useState(null)
   const [loginError, setLoginError] = useState(null)
+  const [theme, setTheme]       = useState(() => localStorage.getItem('theme') || 'dark')
 
   const [view, setView]         = useState('dashboard')
   const [banco, setBanco]       = useState("— auto —")
@@ -61,6 +62,11 @@ export default function App() {
   const [resultado, setResultado] = useState(null)
   const [error, setError]       = useState(null)
   const [tableTab, setTableTab] = useState('banco')
+
+  useEffect(() => {
+    document.documentElement.className = theme
+    localStorage.setItem('theme', theme)
+  }, [theme])
 
   // Cargar datos del usuario al tener token
   useEffect(() => {
@@ -161,10 +167,12 @@ export default function App() {
     return <LoginScreen onLogin={handleLogin} error={loginError} />
   }
 
-  const esAdmin = usuario.rol === 'admin'
+  const esAdmin = usuario?.rol === 'admin'
+
+
 
   return (
-    <div className="flex h-screen bg-brand-dark text-slate-100 font-sans overflow-hidden">
+    <div className={`flex h-screen bg-brand-dark text-[var(--text-primary)] font-sans overflow-hidden transition-colors duration-300 ${theme === 'light' ? 'light' : ''}`}>
       {/* Sidebar */}
       <aside className="w-68 glass-sidebar flex flex-col z-30 shadow-2xl">
         <div className="p-8 flex items-center space-x-4 mb-8">
@@ -172,7 +180,7 @@ export default function App() {
             <Activity className="text-white" size={26} />
           </div>
           <span className="text-xl font-extrabold tracking-tight">
-            Conciliador <span className="text-brand-blue">Flow</span>
+            Conta<span className="text-brand-blue">Flex</span>
           </span>
         </div>
         <nav className="flex-1 px-4 space-y-2">
@@ -183,9 +191,9 @@ export default function App() {
         </nav>
         <div className="px-4 pb-8 border-t border-white/5 mt-4 pt-4">
           <div className="px-6 py-3 mb-2">
-            <p className="text-xs font-black text-slate-300">{usuario.username}</p>
+            <p className="text-xs font-black text-slate-300">{usuario?.username ?? 'Usuario'}</p>
             <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${esAdmin ? 'bg-brand-blue/20 text-brand-blue' : 'bg-slate-700 text-slate-400'}`}>
-              {usuario.rol}
+              {usuario?.rol ?? '—'}
             </span>
           </div>
           <button onClick={handleLogout} className="flex items-center space-x-3 w-full px-6 py-3 rounded-2xl text-rose-500 hover:bg-rose-500/10 transition-all font-bold">
@@ -204,12 +212,19 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center space-x-3">
-            {esAdmin && <Shield size={16} className="text-brand-blue" title="Administrador" />}
-            <p className="text-sm font-black">{usuario.username}</p>
+            <button
+               onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+               className="p-2.5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all text-slate-400 hover:text-brand-blue"
+               title={theme === 'dark' ? 'Modo día' : 'Modo noche'}
+            >
+              {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
+            </button>
+            <div className="h-8 w-px bg-white/5 mx-2"></div>
+            <p className="text-sm font-black text-[var(--text-primary)]">{usuario?.username ?? 'Usuario'}</p>
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto p-10 space-y-10 scrollbar-hide">
+        <main className="flex-1 overflow-y-auto p-10 space-y-10 scrollbar-hide bg-[var(--bg-dark)]">
           {view === 'dashboard' && (
             <Dashboard
               banco={banco} setBanco={setBanco}
@@ -255,7 +270,7 @@ function LoginScreen({ onLogin, error }) {
             <Lock className="text-brand-blue" size={40} />
           </div>
         </div>
-        <h1 className="text-2xl font-black text-center mb-1 tracking-tight">Conciliador Flow</h1>
+        <h1 className="text-2xl font-black text-center mb-1 tracking-tight">Conta<span className="text-brand-blue">Flex</span></h1>
         <p className="text-slate-400 text-sm text-center mb-8">Ingresá con tu usuario y contraseña.</p>
         <form onSubmit={submit} className="space-y-4">
           <input
@@ -297,8 +312,80 @@ function Dashboard({
   return (
     <>
       <div>
-        <h2 className="text-4xl font-black tracking-tight mb-2">Conciliación Bancaria</h2>
-        <p className="text-slate-400 font-medium">Procesá extractos y mayores para detectar diferencias.</p>
+        <h2 className="text-4xl font-black tracking-tight mb-2 text-[var(--text-primary)]">Conciliación Bancaria</h2>
+        <p className="text-[var(--text-secondary)] font-medium">Procesá extractos y mayores para detectar diferencias.</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+        {/* Upload - Extractos */}
+        <div className="card-premium p-6 flex flex-col bg-brand-card/30 border-white/5">
+          <h3 className="text-sm font-bold mb-4 flex items-center space-x-2">
+            <Upload size={16} className="text-brand-blue" /><span>Extractos Bancarios</span>
+            <div className="ml-auto flex gap-1">
+              <span className="text-[9px] font-black text-slate-600 bg-brand-blue/10 text-brand-blue px-2 py-0.5 rounded-full">PDF</span>
+              <span className="text-[9px] font-black text-slate-600 bg-emerald-500/10 text-emerald-500 px-2 py-0.5 rounded-full">EXCEL</span>
+            </div>
+          </h3>
+          <div
+            className="border-2 border-dashed border-brand-blue/20 rounded-2xl flex flex-col items-center justify-center p-8 hover:bg-brand-blue/5 transition-all min-h-[160px]"
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => {
+              e.preventDefault()
+              const allowed = Array.from(e.dataTransfer.files).filter(f => /\.(pdf|xlsx|xls)$/i.test(f.name))
+              if (allowed.length) setExtractos(p => [...p, ...allowed])
+            }}>
+            {extractos.length > 0 && (
+              <div className="mb-4 space-y-1.5 w-full">
+                {extractos.map((f, i) => {
+                  const isPdf = f.name.toLowerCase().endsWith('.pdf')
+                  return <FileBadge key={`e${i}`} name={f.name} tag={isPdf ? 'PDF' : 'XLS'} color={isPdf ? 'blue' : 'green'} onRemove={() => setExtractos(p => p.filter((_, x) => x !== i))} />
+                })}
+              </div>
+            )}
+            <input type="file" multiple id="file_extractos" accept=".pdf,.xlsx,.xls" className="hidden"
+              onChange={e => {
+                const allowed = Array.from(e.target.files)
+                if (allowed.length) setExtractos(p => [...p, ...allowed])
+                e.target.value = ''
+              }} />
+            <label htmlFor="file_extractos" className="bg-brand-blue text-white px-8 py-3 rounded-2xl font-black text-xs hover:bg-blue-600 cursor-pointer transition-all shadow-xl shadow-brand-blue/20">
+              SELECCIONAR ARCHIVOS
+            </label>
+            <p className="text-[10px] text-[var(--text-secondary)] mt-3 text-center">PDF o Excel · Máx. {MAX_FILE_SIZE_MB} MB</p>
+          </div>
+        </div>
+
+        {/* Upload - Mayores */}
+        <div className="card-premium p-6 flex flex-col bg-brand-card/30 border-white/5">
+          <h3 className="text-sm font-bold mb-4 flex items-center space-x-2">
+            <Upload size={16} className="text-emerald-500" /><span>Mayores Contables</span>
+            <span className="ml-auto text-[9px] font-black bg-emerald-500/10 text-emerald-400 px-2 py-0.5 rounded-full">XLSX</span>
+          </h3>
+          <div
+            className="border-2 border-dashed border-emerald-500/20 rounded-2xl flex flex-col items-center justify-center p-8 hover:bg-emerald-500/5 transition-all min-h-[160px]"
+            onDragOver={e => e.preventDefault()}
+            onDrop={e => {
+              e.preventDefault()
+              const excels = Array.from(e.dataTransfer.files).filter(f => /\.(xlsx|xls)$/i.test(f.name))
+              if (excels.length) setMayores(p => [...p, ...excels])
+            }}>
+            {mayores.length > 0 && (
+              <div className="mb-4 space-y-1.5 w-full">
+                {mayores.map((f, i) => <FileBadge key={`m${i}`} name={f.name} tag="XLS" color="green" onRemove={() => setMayores(p => p.filter((_, x) => x !== i))} />)}
+              </div>
+            )}
+            <input type="file" multiple id="file_mayores" accept=".xlsx,.xls" className="hidden"
+              onChange={e => {
+                const excels = Array.from(e.target.files)
+                if (excels.length) setMayores(p => [...p, ...excels])
+                e.target.value = ''
+              }} />
+            <label htmlFor="file_mayores" className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black text-xs hover:bg-emerald-700 cursor-pointer transition-all shadow-xl shadow-emerald-500/20">
+              SELECCIONAR EXCEL
+            </label>
+            <p className="text-[10px] text-[var(--text-secondary)] mt-3 text-center">Arrastrá tus archivos Excel aquí</p>
+          </div>
+        </div>
       </div>
 
       {/* KPIs */}
@@ -310,7 +397,7 @@ function Dashboard({
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         {/* Gráfico */}
-        <div className="lg:col-span-8">
+        <div className="lg:col-span-12">
           <Card title="Distribución de Resultados">
             <div className="h-64 mt-4">
               <ResponsiveContainer width="100%" height="100%">
@@ -323,27 +410,6 @@ function Dashboard({
               </ResponsiveContainer>
             </div>
           </Card>
-        </div>
-
-        {/* Upload */}
-        <div className="lg:col-span-4 card-premium p-8 flex flex-col bg-brand-card/30 border-white/5">
-          <h3 className="text-lg font-bold mb-6 flex items-center space-x-2">
-            <Upload size={20} className="text-brand-blue" /><span>Cargar Archivos</span>
-          </h3>
-          <div className="flex-1 border-2 border-dashed border-white/10 rounded-3xl flex flex-col items-center justify-center p-6 hover:bg-white/2 transition-all"
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => { e.preventDefault(); agregarArchivos(Array.from(e.dataTransfer.files)) }}>
-            <div className="mb-4 space-y-2 w-full">
-              {extractos.map((f, i) => <FileBadge key={`e${i}`} name={f.name} tag="PDF" onRemove={() => setExtractos(p => p.filter((_, x) => x !== i))} />)}
-              {mayores.map((f, i) => <FileBadge key={`m${i}`} name={f.name} tag="XLS" onRemove={() => setMayores(p => p.filter((_, x) => x !== i))} />)}
-            </div>
-            <input type="file" multiple id="file_btn" accept=".pdf,.xlsx,.xls" className="hidden"
-              onChange={e => agregarArchivos(Array.from(e.target.files))} />
-            <label htmlFor="file_btn" className="bg-brand-blue text-white px-8 py-3 rounded-2xl font-black text-xs hover:bg-blue-600 cursor-pointer transition-all shadow-xl">
-              SELECCIONAR ARCHIVOS
-            </label>
-            <p className="text-[10px] text-slate-600 mt-3 text-center">PDF = extractos · XLSX/XLS = mayores<br/>Máx. {MAX_FILE_SIZE_MB} MB</p>
-          </div>
         </div>
       </div>
 
@@ -598,9 +664,9 @@ function PanelUsuarios({ usuario: adminActual }) {
 function KPICard({ label, value, icon }) {
   return (
     <div className="card-premium p-8 hover:border-brand-blue/30 transition-all">
-      <div className="bg-brand-dark/40 p-3 rounded-2xl border border-white/5 mb-6 w-fit">{icon}</div>
-      <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">{label}</p>
-      <p className="text-3xl font-black tracking-tighter">{value}</p>
+      <div className="bg-emerald-500/5 p-3 rounded-2xl border border-white/5 mb-6 w-fit">{icon}</div>
+      <p className="text-[10px] font-black text-[var(--text-secondary)] uppercase tracking-widest mb-1">{label}</p>
+      <p className="text-3xl font-black tracking-tighter text-[var(--text-primary)]">{value}</p>
     </div>
   )
 }
@@ -614,16 +680,17 @@ function SidebarLink({ icon, label, active, onClick }) {
 function Card({ title, children }) {
   return (
     <div className="card-premium p-8 bg-brand-card/30 flex flex-col">
-      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-500 mb-4">{title}</h3>
+      <h3 className="text-[10px] font-black uppercase tracking-[0.2em] text-[var(--text-secondary)] mb-4">{title}</h3>
       <div className="flex-1">{children}</div>
     </div>
   )
 }
-function FileBadge({ name, tag, onRemove }) {
+function FileBadge({ name, tag, onRemove, color = 'blue' }) {
+  const iconColor = color === 'green' ? 'text-emerald-500' : 'text-brand-blue'
   return (
     <div className="flex items-center justify-between bg-white/5 border border-white/5 rounded-xl px-4 py-2">
       <div className="flex items-center space-x-3 overflow-hidden">
-        <FileText size={14} className="text-brand-blue shrink-0" />
+        <FileText size={14} className={`${iconColor} shrink-0`} />
         <span className="text-[10px] font-bold truncate text-slate-400">{name}</span>
         <span className="text-[9px] font-black text-slate-600 shrink-0">{tag}</span>
       </div>

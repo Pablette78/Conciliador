@@ -1,20 +1,39 @@
 @import "tailwindcss";
 
-@theme {
-  --color-brand-blue: #3B82F6;
-  --color-brand-dark: #0B0E14;
-  --color-brand-panel: #11141B;
-  --color-brand-card: #1A1D26;
-  --color-brand-glass: rgba(26, 29, 38, 0.7);
+:root {
+  --brand-blue: #3B82F6;
+  --bg-dark: #0B0E14;
+  --bg-panel: #11141B;
+  --bg-card: #1A1D26;
+  --text-primary: #F1F5F9;
+  --text-secondary: #94A3B8;
+  --border-color: rgba(255, 255, 255, 0.05);
   
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
-}
-
-:root {
-  background-color: #0B0E14;
-  color: #F1F5F9;
+  
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+}
+
+.light {
+  --bg-dark: #E2E8F0;
+  --bg-panel: #F1F5F9;
+  --bg-card: #FFFFFF;
+  --text-primary: #0F172A;
+  --text-secondary: #64748B;
+  --border-color: rgba(0, 0, 0, 0.1);
+  
+  background-color: var(--bg-dark);
+  color: var(--text-primary);
+}
+
+@theme {
+  --color-brand-blue: var(--brand-blue);
+  --color-brand-dark: var(--bg-dark);
+  --color-brand-panel: var(--bg-panel);
+  --color-brand-card: var(--bg-card);
 }
 
 body {
@@ -25,22 +44,22 @@ body {
 
 /* Glassmorphism Sidebar */
 .glass-sidebar {
-  background: rgba(17, 20, 27, 0.6);
+  background: var(--bg-panel);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  border-right: 1px solid var(--border-color);
 }
 
 /* Premium Card */
 .card-premium {
-  background: var(--color-brand-card);
-  border: 1px solid rgba(255, 255, 255, 0.05);
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
   border-radius: 20px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.1);
 }
 
 .card-gradient-blue {
-  background: linear-gradient(135deg, #1A1D26 0%, #1e2a4a 100%);
+  background: linear-gradient(135deg, var(--bg-card) 0%, #1e2a4a 100%);
 }
 
 /* Custom scrollbar */
