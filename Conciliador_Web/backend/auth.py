@@ -259,8 +259,20 @@ async def crear_usuario(data: UsuarioCreate):
         raise HTTPException(status_code=400, detail=str(e))
     return {"ok": True, "username": data.username}
 
-@router.put("/usuarios/{username}", dependencies=[Depends(require_admin)])
-async def actualizar_usuario(username: str, data: UsuarioUpdate):
+@router.put("/usuarios/{username}")
+async def actualizar_usuario(username: str, data: UsuarioUpdate, usuario_actual: dict = Depends(get_usuario_actual)):
+    # Protección de permisos
+    es_admin = usuario_actual["rol"] == 'admin'
+    es_mismo_usuario = usuario_actual["username"] == username
+    
+    if not es_admin and not es_mismo_usuario:
+        raise HTTPException(status_code=403, detail="No tenés permiso para editar este usuario.")
+    
+    # Si no es admin, no puede cambiarse el ROL ni el estado ACTIVO
+    if not es_admin:
+        if data.rol is not None or data.activo is not None:
+            raise HTTPException(status_code=403, detail="Solo un administrador puede cambiar el rol o el estado activo.")
+
     with get_db() as conn:
         if DATABASE_URL:
             cursor = conn.cursor(cursor_factory=__import__('psycopg2.extras').extras.RealDictCursor)
