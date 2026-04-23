@@ -30,9 +30,10 @@ SH_IMP   = "3. Detalle Impuestos"
 SH_CONC  = "4. Conciliación"
 
 
-def _h(ws, r, headers):
-    for c, h in enumerate(headers, 1):
-        cl = ws.cell(row=r, column=c, value=h)
+def _h(ws, r, headers, start_col=1):
+    for i, h in enumerate(headers):
+        col = start_col + i
+        cl = ws.cell(row=r, column=col, value=h)
         cl.font = Font(name='Arial', bold=True, size=10, color='FFFFFF')
         cl.fill = AZUL_HEADER
         cl.alignment = CA
@@ -740,6 +741,10 @@ def _llenar_resumen(ws, resultado, datos_banco, mes_anio,
         r += 1
 
     r += 1
+    # Guardamos esta fila para los encabezados compartidos
+    row_headers = r
+    r += 1
+    
     ws.cell(row=r, column=1, value='GASTOS BANCARIOS E IMPUESTOS').font = Font(name='Arial', bold=True, size=12, color='2F5496')
     r += 1
     gran_total_gastos = sum(d['total'] for d in resultado.gastos_por_categoria.values())
@@ -822,10 +827,14 @@ def _llenar_resumen(ws, resultado, datos_banco, mes_anio,
     ws.column_dimensions['G'].width = 45
 
     # ── DUPLICADO: CONTROL DE AUDITORÍA (Mismo que en Conciliación) ──────────
-    r = 22 # Lo bajamos para que no tape el resumen A:B
-    ws.cell(row=r, column=col_d, value='AUDITORÍA CRUZADA (Conciliados + Pendientes vs Totales)').font = Font(name='Arial', bold=True, size=11, color='2F5496')
-    r += 1
-    _h(ws, r, ['Control', 'Descripción', 'Suma Celdas', 'Celdas Ref.', 'Diferencia (→ 0)']) # versión compactada con 5 columnas
+    # Lo posicionamos a la derecha del bloque de estadísticas y gastos
+    # Usamos la row_headers que definimos antes para que queden alineados
+    ws.cell(row=row_headers - 1, column=col_d, value='AUDITORÍA CRUZADA (Conciliados + Pendientes vs Totales)').font = Font(name='Arial', bold=True, size=11, color='2F5496')
+    
+    _h(ws, row_headers, ['Control / Categoría', 'Monto', 'Info / Cantidad'], start_col=1)
+    _h(ws, row_headers, ['Control Auditoría', 'Referencia Cálculo', 'Suma Celdas', 'Celdas Ref.', 'Diferencia (→ 0)'], start_col=col_d)
+    
+    r_audit = row_headers
     
     # Definimos los checks de auditoría (ahora usando referencias a las celdas del Resumen A:B y Conciliación)
     auditoria_resumen = [
@@ -844,17 +853,17 @@ def _llenar_resumen(ws, resultado, datos_banco, mes_anio,
     ]
 
     for lbl, desc, total_calc, ref_valor in auditoria_resumen:
-        r += 1
-        ws.cell(row=r, column=col_d, value=lbl).font = TF; ws.cell(row=r, column=col_d).border = BD
-        ws.cell(row=r, column=col_e, value=desc).font = Font(name='Arial', size=9); ws.cell(row=r, column=col_e).border = BD
-        ws.cell(row=r, column=col_f, value=total_calc).number_format = MF; ws.cell(row=r, column=col_f).border = BD
-        ws.cell(row=r, column=col_g, value=ref_valor).number_format = MF; ws.cell(row=r, column=col_g).border = BD
+        r_audit += 1
+        ws.cell(row=r_audit, column=col_d, value=lbl).font = TF; ws.cell(row=r_audit, column=col_d).border = BD
+        ws.cell(row=r_audit, column=col_e, value=desc).font = Font(name='Arial', size=9); ws.cell(row=r_audit, column=col_e).border = BD
+        ws.cell(row=r_audit, column=col_f, value=total_calc).number_format = MF; ws.cell(row=r_audit, column=col_f).border = BD
+        ws.cell(row=r_audit, column=col_g, value=ref_valor).number_format = MF; ws.cell(row=r_audit, column=col_g).border = BD
         
         # Columna H (8): Diferencia
         col_h = 8
-        ws.cell(row=r, column=col_h, value=f'=+F{r}-G{r}').number_format = MF
-        ws.cell(row=r, column=col_h).font = Font(name='Arial', bold=True); ws.cell(row=r, column=col_h).border = BD
-        ws.cell(row=r, column=col_h).fill = VERDE_TOTAL
+        ws.cell(row=r_audit, column=col_h, value=f'=+F{r_audit}-G{r_audit}').number_format = MF
+        ws.cell(row=r_audit, column=col_h).font = Font(name='Arial', bold=True); ws.cell(row=r_audit, column=col_h).border = BD
+        ws.cell(row=r_audit, column=col_h).fill = VERDE_TOTAL
     
     ws.column_dimensions[get_column_letter(col_h)].width = 16
 
