@@ -14,6 +14,7 @@ from .parsers.comafi import ComafiParser
 from .parsers.arca import ARCAParser
 from .parsers.amex import AmexParser
 from .parsers.visa import VisaParser
+from .parsers.excel_bank import GenericExcelBankParser
 
 
 def _normalizar(texto: str) -> str:
@@ -47,6 +48,8 @@ _PARSER_MAP = {
     "AMEX": AmexParser,
     "AMERICAN EXPRESS": AmexParser,
     "VISA": VisaParser,
+    # Extracto Excel genérico (cualquier banco no reconocido específicamente)
+    "BANCO (EXCEL)": GenericExcelBankParser,
 }
 
 

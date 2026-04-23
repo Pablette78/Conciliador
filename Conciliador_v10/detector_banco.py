@@ -136,13 +136,25 @@ def _detectar_desde_excel(ruta_excel):
         if 'IMPORTE PESOS' in texto_headers:
             return "Banco Santander"
 
+        # Banco Ciudad exportado a Excel: encabezados típicos de su vista web
+        if 'CIUDAD' in texto_headers:
+            return "Banco Ciudad"
+        if 'DEBITO' in texto_headers and 'CREDITO' in texto_headers and 'DESCRIPCION DE MOVIMIENTO' in texto_headers:
+            return "Banco Ciudad"
+
         # Galicia Excel: columnas típicas de Galicia
         if 'DESCRIPCION' in texto_headers and 'OBSERVACIONES' in texto_headers:
             return "Banco Galicia"
 
-        # Si hay Fecha + Débitos/Créditos → podría ser Galicia u otro
-        if 'DEBITOS' in texto_headers or 'DÉBITOS' in texto_headers:
+        # Si hay Débito + Crédito → potencialmente un banco en Excel genérico
+        if ('DEBITOS' in texto_headers or 'DÉBITOS' in texto_headers or
+                'DEBITO' in texto_headers or 'DÉBITO' in texto_headers):
             return "Banco Galicia"
+
+        # Extracto Excel genérico con columnas de Débito/Crédito de cualquier banco
+        if ('DEBITO' in texto_headers or 'CRÉDITO' in texto_headers or
+                'DEBITO' in texto_headers or 'CREDITO' in texto_headers):
+            return "Banco (Excel)"
 
         # AFIP / ARCA
         if 'CUIT AGENTE RET' in texto_headers or 'IMPORTE RET' in texto_headers:
