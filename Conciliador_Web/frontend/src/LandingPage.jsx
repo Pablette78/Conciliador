@@ -110,12 +110,94 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
         </h2>
         
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-          <FeatureCard icon="📊" title="Asientos automáticos" desc="Generación automática de asientos contables desde comprobantes importados de AFIP/ARCA." />
-          <FeatureCard icon="🧾" title="IVA, IIBB y Ganancias" desc="Liquidaciones mensuales y anuales con alícuotas actualizadas. Exportación directa a aplicativos." />
-          <FeatureCard icon="🏛️" title="Convenio Multilateral" desc="CM03 y CM05 automatizados. Distribución jurisdiccional por actividad o ingresos." />
-          <FeatureCard icon="📈" title="Ajuste por inflación" desc="RECPAM automático según RT6/RT17. Índices FACPCE actualizados en tiempo real." />
-          <FeatureCard icon="🔗" title="Multi-empresa" desc="Gestioná todas tus empresas cliente desde un único panel. Roles y permisos por usuario." />
-          <FeatureCard icon="📤" title="Exportación total" desc="Estados contables, Libro Diario, Mayor y Balance exportables a PDF y Excel nativo." />
+          <FeatureCard icon="🏦" title="Parsers Multibanco" desc="Lectura inteligente de extractos PDF y Excel de Santander, Galicia, BBVA, Ciudad, Comafi y más." />
+          <FeatureCard icon="🎯" title="Conciliación Inteligente" desc="Cruce automático de movimientos bancarios contra tus mayores contables (XLSX) en segundos." />
+          <FeatureCard icon="📑" title="Reportes de Auditoría" desc="Generación de planillas Excel con fórmulas automáticas, listas para presentar al contador." />
+          <FeatureCard icon="🔍" title="Detección de Faltantes" desc="Identifica instantáneamente qué movimientos están solo en el banco o solo en tu sistema." />
+          <FeatureCard icon="⚡" title="Procesamiento Cloud" desc="Sin instalaciones pesadas. Subí tus archivos y obtené el resultado desde cualquier lugar." />
+          <FeatureCard icon="🛡️" title="Control de Integridad" desc="Validación matemática de saldos iniciales y finales para asegurar que no falte ni un centavo." />
+        </div>
+      </section>
+
+      {/* How it works */}
+      <section className="max-w-6xl mx-auto px-6 py-24 border-t border-white/5" id="como-funciona">
+        <div className="text-center mb-16">
+          <div className="font-mono text-[10px] text-[#60a5fa] uppercase tracking-[3px] mb-4">// el sistema en acción</div>
+          <h2 className="text-3xl md:text-5xl font-bold tracking-tight">Así funciona tu nuevo Dashboard</h2>
+          <p className="text-[#94a3b8] mt-4">Interfaz moderna, intuitiva y diseñada para la velocidad.</p>
+        </div>
+
+        <div className="relative mx-auto max-w-4xl rounded-2xl border border-white/10 bg-[#0f172a] shadow-2xl overflow-hidden group">
+          {/* Browser Header Decor */}
+          <div className="h-10 bg-[#1e293b] border-b border-white/5 flex items-center px-4 gap-2">
+            <div className="w-3 h-3 rounded-full bg-[#ef4444]/50"></div>
+            <div className="w-3 h-3 rounded-full bg-[#f59e0b]/50"></div>
+            <div className="w-3 h-3 rounded-full bg-[#10b981]/50"></div>
+            <div className="ml-4 h-5 w-48 bg-[#0f172a] rounded-md border border-white/5 flex items-center px-2">
+              <div className="text-[10px] text-[#475569] font-mono">contaflex.ar/dashboard</div>
+            </div>
+          </div>
+
+          {/* Screenshot Container with masking */}
+          <div className="relative aspect-video overflow-y-auto scrollbar-hide max-h-[500px]">
+            {/* The Screenshots Joined */}
+            <div className="flex flex-col">
+              <img src="/dash_top.png" alt="Dashboard Top" className="w-full h-auto block" />
+              <img src="/dash_bottom.png" alt="Dashboard Bottom" className="w-full h-auto block" />
+            </div>
+
+            {/* PRIVACY MASKS: Blocking the email areas */}
+            {/* Top Right Email */}
+            <div className="absolute top-[2.5%] right-[2%] w-[150px] h-[30px] bg-[#0a0e1a] backdrop-blur-xl border border-white/5 rounded pointer-events-none flex items-center justify-center">
+              <div className="text-[8px] font-mono text-[#475569]">USUARIO PROTEGIDO</div>
+            </div>
+            {/* Bottom Left Email (Fixed Sidebar) */}
+            <div className="absolute top-[88%] left-[2%] w-[140px] h-[40px] bg-[#0a0e1a] backdrop-blur-xl border border-white/5 rounded pointer-events-none flex items-center justify-center">
+              <div className="text-[8px] font-mono text-[#475569]">USUARIO PROTEGIDO</div>
+            </div>
+          </div>
+
+          {/* Overlay on hover hint */}
+          <div className="absolute inset-0 bg-gradient-to-t from-[#0a0e1a] via-transparent to-transparent opacity-40 pointer-events-none"></div>
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 bg-[#3b82f6]/20 border border-[#3b82f6]/40 backdrop-blur-md px-6 py-2 rounded-full text-xs font-semibold text-[#60a5fa] animate-bounce">
+            Hacé scroll para ver más ↓
+          </div>
+        </div>
+
+        {/* Supported Banks Grid */}
+        <div className="mt-20">
+          <p className="text-center text-[#475569] font-mono text-[10px] uppercase tracking-[2px] mb-12">// entidades soportadas</p>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-8 max-w-5xl mx-auto px-4">
+            {[
+              { n: "Santander", id: "santander" },
+              { n: "Galicia", id: "galicia" },
+              { n: "BBVA", id: "bbva" },
+              { n: "Macro", id: "macro" },
+              { n: "Nación", id: "nacion" },
+              { n: "Provincia", id: "provincia" },
+              { n: "Credicoop", id: "credicoop" },
+              { n: "HSBC", id: "hsbc" },
+              { n: "ICBC", id: "icbc" },
+              { n: "Supervielle", id: "supervielle" },
+              { n: "Ciudad", id: "ciudad" },
+              { n: "Comafi", id: "comafi" },
+              { n: "ARCA", id: "arca" },
+              { n: "VISA", id: "visa" }
+            ].map((banco) => (
+              <div key={banco.n} className="group flex flex-col items-center justify-center gap-3 transition-all duration-500">
+                <div className="h-10 w-24 flex items-center justify-center opacity-60 group-hover:opacity-100 transition-all">
+                  <img 
+                    src={`/logos/${banco.id}.png`} 
+                    alt={banco.n} 
+                    className="max-h-full max-w-full object-contain"
+                    onError={(e) => { e.target.style.display = 'none'; }}
+                  />
+                </div>
+                <span className="text-[10px] font-medium text-[#94a3b8] group-hover:text-[#60a5fa] transition-colors">{banco.n}</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-center text-[#475569] text-xs mt-12 italic">¿No ves tu banco? Lo desarrollamos a medida sin costo adicional.</p>
         </div>
       </section>
 
@@ -128,9 +210,31 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <PriceCard name="STARTER" price="$12.900" desc="Para independientes" features={["Hasta 3 empresas", "IVA y Ganancias", "Soporte por email"]} onSelect={() => openModal('register')} />
-          <PriceCard name="PROFESIONAL" price="$28.500" desc="Para estudios contables" featured features={["Empresas ilimitadas", "Todo el módulo impositivo", "Ajuste por inflación", "Multi-usuario"]} onSelect={() => openModal('register')} />
-          <PriceCard name="ENTERPRISE" price="A medida" desc="Para grandes estudios" features={["API de integración", "Onboarding dedicado", "Gerente de cuenta"]} onSelect={() => openModal('register')} />
+          <PriceCard name="INDEPENDIENTE" price="$14.900" desc="Para un solo profesional" features={["1 Usuario", "2 Bancos a elección", "Conciliaciones ilimitadas", "Soporte por email"]} onSelect={() => openModal('register')} />
+          <PriceCard name="ESTUDIO" price="$32.500" desc="Para equipos pequeños" featured features={["3 Usuarios", "Todos los bancos", "Cruce de mayores avanzado", "Soporte por email prioritario"]} onSelect={() => openModal('register')} />
+          <PriceCard name="CORPORATIVO" price="Consultar" desc="Grandes estudios / Integraciones" features={["Usuarios ilimitados", "Parsers a medida", "API de integración", "Soporte dedicado"]} onSelect={() => alert('Próximamente disponible. Contactanos por email.')} disabled />
+        </div>
+
+        {/* Comparison Table */}
+        <div className="mt-24 overflow-x-auto lp-animate-fadeUp">
+          <h3 className="text-2xl font-bold text-center mb-10">Comparativa de Planes</h3>
+          <table className="w-full text-sm text-left border-collapse">
+            <thead>
+              <tr className="border-b border-white/10">
+                <th className="py-4 px-4 text-[#94a3b8] font-mono text-[10px] uppercase">Característica</th>
+                <th className="py-4 px-4 text-center">Independiente</th>
+                <th className="py-4 px-4 text-center text-[#60a5fa]">Estudio</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              <ComparisonRow label="Usuarios" v1="1" v2="3" />
+              <ComparisonRow label="Bancos" v1="2" v2="Todos" />
+              <ComparisonRow label="Cruce de Mayores" v1="Básico" v2="Avanzado" />
+              <ComparisonRow label="Formatos" v1="PDF / Excel" v2="PDF / Excel" />
+              <ComparisonRow label="Soporte" v1="Email" v2="Email Prioritario" />
+              <ComparisonRow label="Actualizaciones" v1="Parsers" v2="Parsers (Bonificadas)" />
+            </tbody>
+          </table>
         </div>
       </section>
 
@@ -243,6 +347,16 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
   );
 }
 
+function ComparisonRow({ label, v1, v2 }) {
+  return (
+    <tr>
+      <td className="py-5 px-4 font-medium text-[#f1f5f9]">{label}</td>
+      <td className="py-5 px-4 text-center text-[#94a3b8]">{v1}</td>
+      <td className="py-5 px-4 text-center text-[#60a5fa] font-semibold">{v2}</td>
+    </tr>
+  );
+}
+
 function FeatureCard({ icon, title, desc }) {
   return (
     <div className="bg-[#141c2e] border border-white/5 rounded-2xl p-8 transition-all hover:border-[#3b82f6]/30 hover:-translate-y-1">
@@ -255,7 +369,7 @@ function FeatureCard({ icon, title, desc }) {
   );
 }
 
-function PriceCard({ name, price, desc, features, featured, onSelect }) {
+function PriceCard({ name, price, desc, features, featured, onSelect, disabled }) {
   return (
     <div className={`bg-[#141c2e] border rounded-2xl p-8 transition-all flex flex-col ${featured ? 'border-[#3b82f6] relative scale-105 z-10' : 'border-white/5'}`}>
       {featured && (
@@ -275,9 +389,10 @@ function PriceCard({ name, price, desc, features, featured, onSelect }) {
       </ul>
       <button 
         onClick={onSelect}
-        className={`w-full py-3 rounded-xl font-semibold transition-all ${featured ? 'bg-[#3b82f6] text-white hover:bg-[#60a5fa]' : 'bg-transparent border border-white/10 text-white hover:border-[#3b82f6]'}`}
+        disabled={disabled}
+        className={`w-full py-3 rounded-xl font-semibold transition-all ${disabled ? 'bg-white/5 text-[#94a3b8] cursor-not-allowed' : featured ? 'bg-[#3b82f6] text-white hover:bg-[#60a5fa]' : 'bg-transparent border border-white/10 text-white hover:border-[#3b82f6]'}`}
       >
-        Empezar gratis
+        {disabled ? 'Consultar' : 'Empezar gratis'}
       </button>
     </div>
   );
