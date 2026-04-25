@@ -110,6 +110,13 @@ def init_db() -> None:
                     vencimiento_prueba TEXT
                 )
             """)
+            
+            # Migración: Agregar vencimiento_prueba si no existe (Postgres)
+            try:
+                cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS vencimiento_prueba TEXT")
+                print("[AUTH] Columna 'vencimiento_prueba' verificada en Postgres.")
+            except Exception:
+                pass
         else:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS usuarios (
@@ -123,6 +130,13 @@ def init_db() -> None:
                     vencimiento_prueba TEXT
                 )
             """)
+            
+            # Migración: Agregar vencimiento_prueba si no existe (SQLite)
+            try:
+                cursor.execute("ALTER TABLE usuarios ADD COLUMN vencimiento_prueba TEXT")
+                print("[AUTH] Columna 'vencimiento_prueba' agregada a SQLite.")
+            except Exception:
+                pass # Ya existe
 
         # Admin por defecto si no existe ningún usuario
         cursor.execute("SELECT 1 FROM usuarios LIMIT 1")
