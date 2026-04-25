@@ -289,6 +289,21 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
                       <button type="submit" className="w-full bg-[#3b82f6] hover:bg-[#60a5fa] text-white py-3 rounded-xl font-semibold transition-all">
                         Ingresar al sistema →
                       </button>
+                      <button 
+                        type="button" 
+                        onClick={async () => {
+                          const email = prompt("Ingresá tu email para recuperar la clave:");
+                          if (email) {
+                            try {
+                              await onForgotPassword(email);
+                              alert("Si el email existe, recibirás instrucciones.");
+                            } catch { alert("Error al procesar solicitud."); }
+                          }
+                        }}
+                        className="w-full text-[10px] text-[#94a3b8] hover:text-[#60a5fa] transition-colors"
+                      >
+                        ¿Olvidaste tu contraseña?
+                      </button>
                       {authError && <p className="text-red-400 text-xs text-center font-medium">{authError}</p>}
                     </form>
                   ) : (

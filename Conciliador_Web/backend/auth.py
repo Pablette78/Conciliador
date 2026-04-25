@@ -12,12 +12,15 @@ import secrets
 from datetime import datetime, timedelta
 from contextlib import contextmanager
 from typing import Optional
+import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import HTMLResponse
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel
+from mailer import enviar_verificacion, enviar_notificacion_upgrade, enviar_reset_password
 
 # --- Config ---
 SECRET_KEY = os.getenv("JWT_SECRET", secrets.token_hex(32))
@@ -62,6 +65,7 @@ class UsuarioUpdate(BaseModel):
     vencimiento_prueba: Optional[str] = None
     plan: Optional[str] = None
     limite_mensual: Optional[int] = None
+    email_verificado: Optional[bool] = None
 
 class UsuarioOut(BaseModel):
     id: int
@@ -75,6 +79,8 @@ class UsuarioOut(BaseModel):
     limite_mensual: int
     usos_mes_actual: int
     ultimo_mes_uso: Optional[str]
+    email_verificado: bool
+    plan_pendiente: Optional[str]
 
 # --- Base de datos ---
 @contextmanager
@@ -144,7 +150,12 @@ def init_db() -> None:
                 ("plan", "TEXT DEFAULT 'Free'"),
                 ("limite_mensual", "INTEGER DEFAULT 5"),
                 ("usos_mes_actual", "INTEGER DEFAULT 0"),
-                ("ultimo_mes_uso", "TEXT")
+                ("ultimo_mes_uso", "TEXT"),
+                ("email_verificado", "INTEGER DEFAULT 0"),
+                ("verificacion_token", "TEXT"),
+                ("reset_token", "TEXT"),
+                ("plan_pendiente", "TEXT"),
+                ("token_aprobacion_suscripcion", "TEXT")
             ]:
                 try:
                     cursor.execute(f"ALTER TABLE usuarios ADD COLUMN {col} {type_def}")
@@ -220,6 +231,10 @@ async def get_usuario_actual(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario no encontrado o inactivo.",
         )
+    
+    # Validar verificación de email (opcional si querés bloquear uso)
+    # if not row["email_verificado"] and row["rol"] != "admin":
+    #     raise HTTPException(status_code=403, detail="Debés verificar tu email para operar.")
     
     # Validar vencimiento de prueba
     if row["vencimiento_prueba"]:
@@ -344,8 +359,24 @@ async def crear_usuario(data: UsuarioCreate):
         with get_db() as conn:
             cursor = conn.cursor()
             limite = PLAN_LIMITS.get(data.plan, 5)
-            q = f"INSERT INTO usuarios (username, password_h, rol, activo, creado_en, plan, limite_mensual) VALUES ({PL}, {PL}, {PL}, 1, {PL}, {PL}, {PL})"
-            cursor.execute(q, (data.username, hash_password(data.password), data.rol, datetime.utcnow().isoformat(), data.plan, limite))
+            token_verif = str(uuid.uuid4())
+            
+            # Si el plan no es Free, marcar como pendiente de aprobación inicial
+            plan_final = 'Free' if data.plan != 'Free' else 'Free'
+            limite_final = 5
+            plan_pend = data.plan if data.plan != 'Free' else None
+            token_aprob = str(uuid.uuid4()) if plan_pend else None
+
+            q = f"INSERT INTO usuarios (username, password_h, rol, activo, creado_en, plan, limite_mensual, email_verificado, verificacion_token, plan_pendiente, token_aprobacion_suscripcion) VALUES ({PL}, {PL}, {PL}, 1, {PL}, {PL}, {PL}, 0, {PL}, {PL}, {PL})"
+            cursor.execute(q, (data.username, hash_password(data.password), data.rol, datetime.utcnow().isoformat(), plan_final, limite_final, token_verif, plan_pend, token_aprob))
+            
+            # Enviar mail de verificación
+            enviar_verificacion(data.username, token_verif)
+            
+            # Si hay plan pendiente, notificar a Pablo
+            if plan_pend:
+                enviar_notificacion_upgrade(data.username, plan_pend, token_aprob)
+                
     except Exception as e:
         # Manejo genérico de duplicados (IntegrityError en ambos)
         if "unique" in str(e).lower() or "duplicate" in str(e).lower():
@@ -411,7 +442,21 @@ async def eliminar_usuario(username: str, admin: dict = Depends(require_admin)):
         cursor.execute(f"DELETE FROM usuarios WHERE username = {PL}", (username,))
     return {"ok": True}
 
-# --- Planes y Upgrade ---
+# --- Verificación de Email ---
+@router.get("/verificar")
+async def verificar_email(token: str):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT username FROM usuarios WHERE verificacion_token = {PL}", (token,))
+        row = cursor.fetchone()
+        if not row:
+            return HTMLResponse("<h2>Token inválido o expirado.</h2>", status_code=400)
+        
+        cursor.execute(f"UPDATE usuarios SET email_verificado = 1, verificacion_token = NULL WHERE verificacion_token = {PL}", (token,))
+    
+    return HTMLResponse("<h2>¡Email verificado con éxito! Ya podés usar ContaFlex.</h2><p><a href='/'>Ir al sitio</a></p>")
+
+# --- Planes y Upgrade (Aprobación) ---
 PLAN_LIMITS = {
     "Free": 5,
     "Individual": 20,
@@ -419,17 +464,81 @@ PLAN_LIMITS = {
 }
 
 @router.post("/upgrade")
-async def upgrade_plan(plan_solicitado: str, usuario: dict = Depends(get_usuario_actual)):
+async def solicitar_upgrade(plan_solicitado: str, usuario: dict = Depends(get_usuario_actual)):
     if plan_solicitado not in PLAN_LIMITS:
         raise HTTPException(status_code=400, detail="Plan inválido.")
     
-    nuevo_limite = PLAN_LIMITS[plan_solicitado]
+    if plan_solicitado == usuario["plan"]:
+        raise HTTPException(status_code=400, detail="Ya tenés este plan.")
+
+    token_aprob = str(uuid.uuid4())
     
     with get_db() as conn:
         cursor = conn.cursor()
         cursor.execute(
-            f"UPDATE usuarios SET plan = {PL}, limite_mensual = {PL} WHERE id = {PL}",
-            (plan_solicitado, nuevo_limite, usuario["id"])
+            f"UPDATE usuarios SET plan_pendiente = {PL}, token_aprobacion_suscripcion = {PL} WHERE id = {PL}",
+            (plan_solicitado, token_aprob, usuario["id"])
         )
     
-    return {"ok": True, "plan": plan_solicitado, "limite": nuevo_limite}
+    # Notificar a Pablo
+    enviar_notificacion_upgrade(usuario["username"], plan_solicitado, token_aprob)
+    
+    return {"ok": True, "message": "Solicitud enviada. Recibirás un mail cuando sea aprobada."}
+
+@router.get("/aprobar-suscripcion")
+async def aprobar_suscripcion(token: str):
+    with get_db() as conn:
+        cursor = conn.cursor()
+        # En Postgres necesitamos manejar el cursor para dict access si usamos la lógica de auth.py
+        if DATABASE_URL:
+            from psycopg2.extras import RealDictCursor
+            cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cursor.execute(f"SELECT * FROM usuarios WHERE token_aprobacion_suscripcion = {PL}", (token,))
+        row = cursor.fetchone()
+        if not row:
+            return HTMLResponse("<h2>Token de aprobación no válido.</h2>", status_code=400)
+        
+        nuevo_plan = row["plan_pendiente"]
+        nuevo_limite = PLAN_LIMITS.get(nuevo_plan, 5)
+        
+        cursor.execute(
+            f"UPDATE usuarios SET plan = {PL}, limite_mensual = {PL}, plan_pendiente = NULL, token_aprobacion_suscripcion = NULL WHERE id = {PL}",
+            (nuevo_plan, nuevo_limite, row["id"])
+        )
+    
+    return HTMLResponse(f"<h2>Suscripción aprobada para {row['username']} al plan {nuevo_plan}.</h2>")
+
+# --- Password Reset ---
+@router.post("/olvide-password")
+async def solicitar_reset(username: str):
+    token = str(uuid.uuid4())
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT 1 FROM usuarios WHERE username = {PL}", (username,))
+        if not cursor.fetchone():
+            # No revelamos si el email existe o no por seguridad
+            return {"ok": True, "message": "Si el email existe, recibirás instrucciones."}
+        
+        cursor.execute(f"UPDATE usuarios SET reset_token = {PL} WHERE username = {PL}", (token, username))
+    
+    enviar_reset_password(username, token)
+    return {"ok": True, "message": "Email enviado."}
+
+@router.post("/reset-password")
+async def reset_password(token: str, nueva_pass: str):
+    if len(nueva_pass) < 8:
+        raise HTTPException(status_code=400, detail="Mínimo 8 caracteres.")
+        
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"SELECT username FROM usuarios WHERE reset_token = {PL}", (token,))
+        row = cursor.fetchone()
+        if not row:
+            raise HTTPException(status_code=400, detail="Token inválido o expirado.")
+        
+        cursor.execute(
+            f"UPDATE usuarios SET password_h = {PL}, reset_token = NULL WHERE reset_token = {PL}",
+            (hash_password(nueva_pass), token)
+        )
+    return {"ok": True}
