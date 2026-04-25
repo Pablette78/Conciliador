@@ -23,16 +23,17 @@ jobs:
           npm install
           npm run build
 
-      - name: 🚀 Desplegar Frontend a public_html
+      - name: 🚀 Desplegar Frontend (Web)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./Conciliador_Web/frontend/dist/
-          server-dir: ./public_html/
+          server-dir: ./
+          state-name: .frontend-ftp-state
 
-      - name: 🚀 Desplegar Backend a carpeta api
+      - name: 🚀 Desplegar Backend (API)
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
@@ -40,6 +41,7 @@ jobs:
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./Conciliador_Web/backend/
           server-dir: ./api/
+          state-name: .backend-ftp-state
           exclude: |
              **/__pycache__/**
              **/logs/**
