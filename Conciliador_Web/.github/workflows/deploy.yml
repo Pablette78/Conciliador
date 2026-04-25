@@ -19,7 +19,7 @@ jobs:
 
       - name: 🏗️ Build Frontend
         run: |
-          cd frontend
+          cd Conciliador_Web/frontend
           npm install
           npm run build
 
@@ -29,7 +29,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./frontend/dist/
+          local-dir: ./Conciliador_Web/frontend/dist/
           server-dir: ./public_html/
 
       - name: 🚀 Desplegar Backend a carpeta api
@@ -38,7 +38,7 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./backend/
+          local-dir: ./Conciliador_Web/backend/
           server-dir: ./api/
           exclude: |
              **/__pycache__/**
