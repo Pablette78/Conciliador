@@ -12,7 +12,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from logger import get_logger
-from auth import init_db, get_usuario_actual, require_admin, router as auth_router
+from auth import init_db, get_usuario_actual, require_admin, get_db, PL, router as auth_router
 
 logger = get_logger("conciliador.main")
 
@@ -129,6 +129,15 @@ async def conciliar(
     usuario: dict = Depends(get_usuario_actual),
 ):
     logger.info(f"Conciliación iniciada por '{usuario['username']}' | banco={banco}")
+    
+    # Validar Límite Mensual
+    if usuario["rol"] != "admin":
+        if usuario["usos_mes_actual"] >= usuario["limite_mensual"]:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Has alcanzado tu límite mensual de {usuario['limite_mensual']} conciliaciones. Actualizá tu plan para seguir."
+            )
+
     proc_dir = tempfile.mkdtemp()
     try:
         # Validar archivos
@@ -190,6 +199,14 @@ async def conciliar(
         ruta_resultado = os.path.join(RESULTS_DIR, f"{file_id}_{filename}")
         generar_excel(resultado, datos_comb, ruta_resultado, "Web", movimientos_sistema=movs_sis)
         logger.info(f"Excel generado: {filename} por '{usuario['username']}'")
+
+        # Incrementar contador de uso
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"UPDATE usuarios SET usos_mes_actual = usos_mes_actual + 1 WHERE id = {PL}",
+                (usuario["id"],)
+            )
 
         pre_gastos = [
             {"categoria": cat, "total": d["total"], "color": COLORES_CATEGORIA[i % len(COLORES_CATEGORIA)]}

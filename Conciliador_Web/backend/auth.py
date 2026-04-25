@@ -52,13 +52,16 @@ class UsuarioCreate(BaseModel):
     username: str
     password: str
     rol: str = "usuario"
+    plan: str = "Free"
 
 class UsuarioUpdate(BaseModel):
     new_username: Optional[str] = None
     password: Optional[str] = None
     rol: Optional[str] = None
     activo: Optional[bool] = None
-    vencimiento_prueba: Optional[str] = None # Nuevo campo editable
+    vencimiento_prueba: Optional[str] = None
+    plan: Optional[str] = None
+    limite_mensual: Optional[int] = None
 
 class UsuarioOut(BaseModel):
     id: int
@@ -68,6 +71,10 @@ class UsuarioOut(BaseModel):
     creado_en: str
     ultimo_login: Optional[str]
     vencimiento_prueba: Optional[str]
+    plan: str
+    limite_mensual: int
+    usos_mes_actual: int
+    ultimo_mes_uso: Optional[str]
 
 # --- Base de datos ---
 @contextmanager
@@ -131,12 +138,22 @@ def init_db() -> None:
                 )
             """)
             
-            # Migración: Agregar vencimiento_prueba si no existe (SQLite)
-            try:
-                cursor.execute("ALTER TABLE usuarios ADD COLUMN vencimiento_prueba TEXT")
-                print("[AUTH] Columna 'vencimiento_prueba' agregada a SQLite.")
-            except Exception:
-                pass # Ya existe
+            # Migración: Agregar nuevas columnas si no existen (SQLite)
+            for col, type_def in [
+                ("vencimiento_prueba", "TEXT"),
+                ("plan", "TEXT DEFAULT 'Free'"),
+                ("limite_mensual", "INTEGER DEFAULT 5"),
+                ("usos_mes_actual", "INTEGER DEFAULT 0"),
+                ("ultimo_mes_uso", "TEXT")
+            ]:
+                try:
+                    cursor.execute(f"ALTER TABLE usuarios ADD COLUMN {col} {type_def}")
+                    print(f"[AUTH] Columna '{col}' agregada a SQLite.")
+                except Exception:
+                    pass # Ya existe
+            
+            # Migración: Usuarios existentes pasan a plan 'Estudio'
+            cursor.execute("UPDATE usuarios SET plan = 'Estudio', limite_mensual = 100 WHERE plan = 'Free' OR plan IS NULL")
 
         # Admin por defecto si no existe ningún usuario
         cursor.execute("SELECT 1 FROM usuarios LIMIT 1")
@@ -213,7 +230,22 @@ async def get_usuario_actual(
                 detail="Tu período de prueba de 14 días ha vencido. Contactanos para activar tu cuenta.",
             )
 
-    return dict(row)
+    user_dict = dict(row)
+    
+    # Lógica de Reseteo Mensual (Lazy Reset)
+    mes_actual = datetime.utcnow().strftime("%Y-%m")
+    if user_dict.get("ultimo_mes_uso") != mes_actual:
+        with get_db() as conn_reset:
+            cursor_reset = conn_reset.cursor()
+            cursor_reset.execute(
+                f"UPDATE usuarios SET usos_mes_actual = 0, ultimo_mes_uso = {PL} WHERE id = {PL}",
+                (mes_actual, user_dict["id"])
+            )
+        user_dict["usos_mes_actual"] = 0
+        user_dict["ultimo_mes_uso"] = mes_actual
+
+    return user_dict
+
 
 async def require_admin(usuario: dict = Depends(get_usuario_actual)) -> dict:
     if usuario["rol"] != "admin":
@@ -289,6 +321,10 @@ async def me(usuario: dict = Depends(get_usuario_actual)):
         creado_en=usuario["creado_en"],
         ultimo_login=usuario.get("ultimo_login"),
         vencimiento_prueba=usuario.get("vencimiento_prueba"),
+        plan=usuario.get("plan", "Free"),
+        limite_mensual=usuario.get("limite_mensual", 5),
+        usos_mes_actual=usuario.get("usos_mes_actual", 0),
+        ultimo_mes_uso=usuario.get("ultimo_mes_uso")
     )
 
 @router.get("/usuarios", dependencies=[Depends(require_admin)])
@@ -298,7 +334,7 @@ async def listar_usuarios():
             cursor = conn.cursor(cursor_factory=__import__('psycopg2.extras').extras.RealDictCursor)
         else:
             cursor = conn.cursor()
-        cursor.execute("SELECT id, username, rol, activo, creado_en, ultimo_login, vencimiento_prueba FROM usuarios ORDER BY id")
+        cursor.execute("SELECT id, username, rol, activo, creado_en, ultimo_login, vencimiento_prueba, plan, limite_mensual, usos_mes_actual, ultimo_mes_uso FROM usuarios ORDER BY id")
         rows = cursor.fetchall()
     return [UsuarioOut(**dict(r)) for r in rows]
 
@@ -307,9 +343,9 @@ async def crear_usuario(data: UsuarioCreate):
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            vencimiento = (datetime.utcnow() + timedelta(days=14)).isoformat()
-            q = f"INSERT INTO usuarios (username, password_h, rol, activo, creado_en, vencimiento_prueba) VALUES ({PL}, {PL}, {PL}, 1, {PL}, {PL})"
-            cursor.execute(q, (data.username, hash_password(data.password), data.rol, datetime.utcnow().isoformat(), vencimiento))
+            limite = PLAN_LIMITS.get(data.plan, 5)
+            q = f"INSERT INTO usuarios (username, password_h, rol, activo, creado_en, plan, limite_mensual) VALUES ({PL}, {PL}, {PL}, 1, {PL}, {PL}, {PL})"
+            cursor.execute(q, (data.username, hash_password(data.password), data.rol, datetime.utcnow().isoformat(), data.plan, limite))
     except Exception as e:
         # Manejo genérico de duplicados (IntegrityError en ambos)
         if "unique" in str(e).lower() or "duplicate" in str(e).lower():
@@ -374,3 +410,26 @@ async def eliminar_usuario(username: str, admin: dict = Depends(require_admin)):
         cursor = conn.cursor()
         cursor.execute(f"DELETE FROM usuarios WHERE username = {PL}", (username,))
     return {"ok": True}
+
+# --- Planes y Upgrade ---
+PLAN_LIMITS = {
+    "Free": 5,
+    "Individual": 20,
+    "Estudio": 100
+}
+
+@router.post("/upgrade")
+async def upgrade_plan(plan_solicitado: str, usuario: dict = Depends(get_usuario_actual)):
+    if plan_solicitado not in PLAN_LIMITS:
+        raise HTTPException(status_code=400, detail="Plan inválido.")
+    
+    nuevo_limite = PLAN_LIMITS[plan_solicitado]
+    
+    with get_db() as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE usuarios SET plan = {PL}, limite_mensual = {PL} WHERE id = {PL}",
+            (plan_solicitado, nuevo_limite, usuario["id"])
+        )
+    
+    return {"ok": True, "plan": plan_solicitado, "limite": nuevo_limite}

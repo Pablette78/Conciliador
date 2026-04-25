@@ -89,10 +89,10 @@ export default function App() {
     }
   }
 
-  const handleRegister = async ({ username, password, rol }) => {
+  const handleRegister = async ({ username, password, rol, plan }) => {
     setLoginError(null)
     try {
-      await axios.post(`${API_BASE_URL}/auth/usuarios`, { username, password, rol })
+      await axios.post(`${API_BASE_URL}/auth/usuarios`, { username, password, rol, plan })
       // Auto-login tras registro
       await handleLogin({ username, password })
       return true
@@ -209,9 +209,24 @@ export default function App() {
         <div className="px-4 pb-8 border-t border-white/5 mt-4 pt-4">
           <div className="px-6 py-3 mb-2">
             <p className="text-xs font-black text-slate-300">{usuario?.username ?? 'Usuario'}</p>
-            <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${esAdmin ? 'bg-brand-blue/20 text-brand-blue' : 'bg-slate-700 text-slate-400'}`}>
-              {usuario?.rol ?? '—'}
-            </span>
+            <div className="flex items-center gap-2 mt-1">
+              <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${esAdmin ? 'bg-brand-blue/20 text-brand-blue' : 'bg-slate-700 text-slate-400'}`}>
+                {usuario?.plan ?? (esAdmin ? 'Admin' : 'Free')}
+              </span>
+              {!esAdmin && (
+                <span className="text-[10px] text-slate-500 font-mono">
+                  {usuario?.usos_mes_actual}/{usuario?.limite_mensual}
+                </span>
+              )}
+            </div>
+            {!esAdmin && (
+              <div className="w-full bg-slate-800 h-1 rounded-full mt-2 overflow-hidden">
+                <div 
+                  className="bg-brand-blue h-full transition-all" 
+                  style={{ width: `${Math.min(100, (usuario?.usos_mes_actual / usuario?.limite_mensual) * 100)}%` }}
+                ></div>
+              </div>
+            )}
           </div>
           <button onClick={handleLogout} className="flex items-center space-x-3 w-full px-6 py-3 rounded-2xl text-rose-500 hover:bg-rose-500/10 transition-all font-bold">
             <LogOut size={18}/> <span className="text-sm">Cerrar sesión</span>
@@ -511,7 +526,7 @@ function PanelUsuarios({ usuario: adminActual }) {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ username: '', password: '', rol: 'usuario', vencimiento_prueba: '' })
+  const [form, setForm] = useState({ username: '', password: '', rol: 'usuario', plan: 'Free' })
   const [editingUser, setEditingUser] = useState(null)
   const [formError, setFormError] = useState(null)
   const [guardando, setGuardando] = useState(false)
@@ -542,7 +557,7 @@ function PanelUsuarios({ usuario: adminActual }) {
         await api.put(`/auth/usuarios/${editingUser}`, {
           password: form.password ? form.password : undefined,
           rol: form.rol,
-          vencimiento_prueba: form.vencimiento_prueba || "" // String vacío en el form -> NULL en DB (Permanente)
+          plan: form.plan
         })
       } else {
         // Crear nuevo
@@ -556,7 +571,7 @@ function PanelUsuarios({ usuario: adminActual }) {
       
       setShowForm(false)
       setEditingUser(null)
-      setForm({ username: '', password: '', rol: 'usuario', vencimiento_prueba: '' })
+      setForm({ username: '', password: '', rol: 'usuario', plan: 'Free' })
       cargar()
     } catch (err) {
       setFormError(err.response?.data?.detail || "Error al guardar usuario.")
@@ -569,7 +584,7 @@ function PanelUsuarios({ usuario: adminActual }) {
       username: u.username, 
       password: '', 
       rol: u.rol, 
-      vencimiento_prueba: u.vencimiento_prueba ? u.vencimiento_prueba.split('T')[0] : '' 
+      plan: u.plan || 'Free'
     })
     setShowForm(true)
   }
@@ -627,12 +642,12 @@ function PanelUsuarios({ usuario: adminActual }) {
               <option value="usuario">Usuario</option>
               <option value="admin">Administrador</option>
             </select>
-            <div className="flex flex-col gap-1">
-              <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Vencimiento Prueba (vacío = permanente)</label>
-              <input type="date" value={form.vencimiento_prueba}
-                onChange={e => setForm(f => ({ ...f, vencimiento_prueba: e.target.value }))}
-                className="bg-brand-dark border border-white/10 rounded-2xl py-3 px-5 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none w-full" />
-            </div>
+            <select value={form.plan} onChange={e => setForm(f => ({ ...f, plan: e.target.value }))}
+              className="bg-brand-dark border border-white/10 rounded-2xl py-3 px-5 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none cursor-pointer">
+              <option value="Free">Plan Free (5)</option>
+              <option value="Individual">Plan Individual (20)</option>
+              <option value="Estudio">Plan Estudio (100)</option>
+            </select>
             {formError && <p className="text-rose-400 text-sm font-bold md:col-span-3">{formError}</p>}
             <div className="md:col-span-3 flex gap-3">
               <button type="submit" disabled={guardando}
@@ -657,8 +672,9 @@ function PanelUsuarios({ usuario: adminActual }) {
             <tr>
               <th className="px-8 py-5 text-left">Usuario</th>
               <th className="px-8 py-5 text-left">Rol</th>
+              <th className="px-8 py-5 text-left">Plan</th>
+              <th className="px-8 py-5 text-left">Uso Mensual</th>
               <th className="px-8 py-5 text-left">Estado</th>
-              <th className="px-8 py-5 text-left">Vence</th>
               <th className="px-8 py-5 text-left">Último login</th>
               <th className="px-8 py-5 text-left">Creado</th>
               <th className="px-8 py-5 text-right">Acciones</th>
@@ -682,18 +698,19 @@ function PanelUsuarios({ usuario: adminActual }) {
                   </span>
                 </td>
                 <td className="px-8 py-5">
+                  <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${u.plan === 'Estudio' ? 'bg-brand-blue/20 text-brand-blue' : 'bg-slate-700 text-slate-400'}`}>
+                    {u.plan}
+                  </span>
+                </td>
+                <td className="px-8 py-5 font-mono text-xs">
+                  <span className={u.usos_mes_actual >= u.limite_mensual ? 'text-rose-400 font-bold' : 'text-slate-300'}>
+                    {u.usos_mes_actual} / {u.limite_mensual}
+                  </span>
+                </td>
+                <td className="px-8 py-5">
                   <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${u.activo ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
                     {u.activo ? 'Activo' : 'Inactivo'}
                   </span>
-                </td>
-                <td className="px-8 py-5 text-xs font-bold">
-                  {u.vencimiento_prueba ? (
-                    <span className={`px-2 py-1 rounded-md ${new Date(u.vencimiento_prueba) < new Date() ? 'bg-rose-500/10 text-rose-400' : 'bg-brand-blue/10 text-brand-blue'}`}>
-                      {new Date(u.vencimiento_prueba).toLocaleDateString('es-AR')}
-                    </span>
-                  ) : (
-                    <span className="text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-md">PERMANENTE</span>
-                  )}
                 </td>
                 <td className="px-8 py-5 text-slate-400 text-xs">
                   {u.ultimo_login ? new Date(u.ultimo_login).toLocaleString('es-AR') : '—'}
@@ -771,6 +788,62 @@ function PanelPerfil({ usuario, setUsuario, onLogout }) {
       </div>
 
       <div className="card-premium p-10 space-y-8">
+        <h3 className="font-black text-lg border-b border-white/5 pb-4">Suscripción y Uso</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400 font-medium">Plan Actual</p>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl font-black text-brand-blue">{usuario.plan}</span>
+              <span className="text-xs bg-brand-blue/10 text-brand-blue px-3 py-1 rounded-full font-bold">Activo</span>
+            </div>
+            <p className="text-xs text-slate-500">Límite mensual: {usuario.limite_mensual} conciliaciones.</p>
+          </div>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400 font-medium">Uso del Mes</p>
+            <div className="flex items-center gap-3">
+              <span className="text-2xl font-black text-white">{usuario.usos_mes_actual}</span>
+              <span className="text-xs text-slate-500">de {usuario.limite_mensual}</span>
+            </div>
+            <div className="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+              <div 
+                className="bg-brand-blue h-full transition-all" 
+                style={{ width: `${Math.min(100, (usuario.usos_mes_actual / usuario.limite_mensual) * 100)}%` }}
+              ></div>
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-6 border-t border-white/5">
+          <p className="text-sm font-bold mb-4">Mejorar Plan</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {['Free', 'Individual', 'Estudio'].map(p => (
+              <button 
+                key={p}
+                onClick={async () => {
+                  if (p === usuario.plan) return;
+                  if (!confirm(`¿Cambiar al plan ${p}?`)) return;
+                  try {
+                    await api.post(`/auth/upgrade?plan_solicitado=${p}`);
+                    // Actualizar usuario localmente
+                    const me = await api.get('/auth/me');
+                    setUsuario(me.data);
+                    alert(`¡Plan actualizado a ${p}!`);
+                  } catch (err) {
+                    alert("Error al actualizar plan.");
+                  }
+                }}
+                disabled={p === usuario.plan}
+                className={`py-3 rounded-xl text-xs font-black transition-all ${p === usuario.plan ? 'bg-slate-800 text-slate-500 cursor-default' : 'bg-white/5 border border-white/10 hover:border-brand-blue hover:text-brand-blue'}`}
+              >
+                {p.toUpperCase()}
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="card-premium p-10 space-y-8">
+        <h3 className="font-black text-lg border-b border-white/5 pb-4">Ajustes de Cuenta</h3>
         <form onSubmit={guardar} className="space-y-6">
           <div className="space-y-2">
             <label className="text-[10px] font-black uppercase text-slate-500">Nombre de Usuario</label>

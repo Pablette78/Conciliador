@@ -8,7 +8,7 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
   
   // Form states
   const [loginForm, setLoginForm] = useState({ email: '', pass: '' });
-  const [regForm, setRegForm] = useState({ name: '', email: '', pass: '' });
+  const [regForm, setRegForm] = useState({ name: '', email: '', pass: '', plan: 'Free' });
 
   const openModal = (tab) => {
     setAuthTab(tab);
@@ -31,7 +31,8 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
     const success = await onRegister({ 
       username: regForm.email, 
       password: regForm.pass,
-      rol: 'usuario' // Por defecto
+      rol: 'usuario',
+      plan: regForm.plan
     });
     if (success) setSuccessMode(true);
   };
@@ -78,7 +79,7 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
           
           <div className="flex flex-wrap justify-center gap-4">
             <button onClick={() => openModal('register')} className="lp-btn-primary px-8 py-3.5 rounded-xl text-base font-semibold">
-              Empezar gratis — 14 días
+              Empezar ahora — Gratis
             </button>
             <button onClick={() => openModal('login')} className="bg-transparent border border-white/10 hover:border-[#3b82f6] hover:text-[#60a5fa] text-white px-8 py-3.5 rounded-xl transition-all">
               Ya tengo cuenta →
@@ -210,9 +211,9 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <PriceCard name="INDEPENDIENTE" price="$14.900" desc="Para un solo profesional" features={["1 Usuario", "2 Bancos a elección", "Conciliaciones ilimitadas", "Soporte por email"]} onSelect={() => openModal('register')} />
-          <PriceCard name="ESTUDIO" price="$32.500" desc="Para equipos pequeños" featured features={["3 Usuarios", "Todos los bancos", "Cruce de mayores avanzado", "Soporte por email prioritario"]} onSelect={() => openModal('register')} />
-          <PriceCard name="CORPORATIVO" price="Consultar" desc="Grandes estudios / Integraciones" features={["Usuarios ilimitados", "Parsers a medida", "API de integración", "Soporte dedicado"]} onSelect={() => alert('Próximamente disponible. Contactanos por email.')} disabled />
+          <PriceCard name="GRATIS" price="Free" desc="Para pruebas rápidas" features={["1 Usuario", "5 conciliaciones/mes", "Soporte básico"]} onSelect={() => { setRegForm(f => ({...f, plan: 'Free'})); openModal('register'); }} />
+          <PriceCard name="INDIVIDUAL" price="$14.900" desc="Para un profesional" featured features={["1 Usuario", "20 conciliaciones/mes", "Soporte prioritario"]} onSelect={() => { setRegForm(f => ({...f, plan: 'Individual'})); openModal('register'); }} />
+          <PriceCard name="ESTUDIO" price="$32.500" desc="Para equipos pequeños" features={["Ilimitados*", "100 conciliaciones/mes", "Soporte dedicado"]} onSelect={() => { setRegForm(f => ({...f, plan: 'Estudio'})); openModal('register'); }} />
         </div>
 
         {/* Comparison Table */}
@@ -316,6 +317,17 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
                           className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
                           value={regForm.pass} onChange={e => setRegForm({...regForm, pass: e.target.value})}
                         />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Plan Seleccionado</label>
+                        <select 
+                          className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
+                          value={regForm.plan} onChange={e => setRegForm({...regForm, plan: e.target.value})}
+                        >
+                          <option value="Free">Free (5 usos)</option>
+                          <option value="Individual">Individual (20 usos)</option>
+                          <option value="Estudio">Estudio (100 usos)</option>
+                        </select>
                       </div>
                       <button type="submit" className="w-full bg-[#3b82f6] hover:bg-[#60a5fa] text-white py-3 rounded-xl font-semibold transition-all">
                         Crear mi cuenta gratis →
