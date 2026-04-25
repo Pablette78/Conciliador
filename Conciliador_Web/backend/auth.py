@@ -15,7 +15,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from passlib.context import CryptContext
+import bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
@@ -26,7 +26,17 @@ TOKEN_EXPIRE_HORAS = int(os.getenv("TOKEN_EXPIRE_HORAS", "8"))
 DB_PATH = os.getenv("AUTH_DB_PATH", "./usuarios.db")
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
 
-pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Reemplazamos passlib por bcrypt directo por compatibilidad con Python 3.14
+def hash_password(password: str) -> str:
+    # bcrypt no acepta más de 72 bytes, truncamos por seguridad si fuera necesario
+    pwd_bytes = password.encode('utf-8')[:72]
+    return bcrypt.hashpw(pwd_bytes, bcrypt.gensalt()).decode('utf-8')
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    try:
+        return bcrypt.checkpw(plain_password.encode('utf-8')[:72], hashed_password.encode('utf-8'))
+    except Exception:
+        return False
 bearer_scheme = HTTPBearer(auto_error=False)
 router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
@@ -48,6 +58,7 @@ class UsuarioUpdate(BaseModel):
     password: Optional[str] = None
     rol: Optional[str] = None
     activo: Optional[bool] = None
+    vencimiento_prueba: Optional[str] = None # Nuevo campo editable
 
 class UsuarioOut(BaseModel):
     id: int
@@ -56,6 +67,7 @@ class UsuarioOut(BaseModel):
     activo: bool
     creado_en: str
     ultimo_login: Optional[str]
+    vencimiento_prueba: Optional[str]
 
 # --- Base de datos ---
 @contextmanager
@@ -94,7 +106,8 @@ def init_db() -> None:
                     rol         TEXT NOT NULL DEFAULT 'usuario',
                     activo      INTEGER NOT NULL DEFAULT 1,
                     creado_en   TEXT NOT NULL,
-                    ultimo_login TEXT
+                    ultimo_login TEXT,
+                    vencimiento_prueba TEXT
                 )
             """)
         else:
@@ -106,7 +119,8 @@ def init_db() -> None:
                     rol         TEXT NOT NULL DEFAULT 'usuario',
                     activo      INTEGER NOT NULL DEFAULT 1,
                     creado_en   TEXT NOT NULL,
-                    ultimo_login TEXT
+                    ultimo_login TEXT,
+                    vencimiento_prueba TEXT
                 )
             """)
 
@@ -117,7 +131,7 @@ def init_db() -> None:
         if not existe:
             admin_pass = os.getenv("ADMIN_PASSWORD", "admin1234")
             q = f"INSERT INTO usuarios (username, password_h, rol, activo, creado_en) VALUES ({PL}, {PL}, 'admin', 1, {PL})"
-            cursor.execute(q, ("admin", pwd_ctx.hash(admin_pass), datetime.utcnow().isoformat()))
+            cursor.execute(q, ("admin", hash_password(admin_pass), datetime.utcnow().isoformat()))
             print(f"[AUTH] Usuario admin creado configurado.")
 
 def _row_to_dict(row) -> dict:
@@ -175,6 +189,16 @@ async def get_usuario_actual(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario no encontrado o inactivo.",
         )
+    
+    # Validar vencimiento de prueba
+    if row["vencimiento_prueba"]:
+        vencimiento = datetime.fromisoformat(row["vencimiento_prueba"])
+        if datetime.utcnow() > vencimiento:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tu período de prueba de 14 días ha vencido. Contactanos para activar tu cuenta.",
+            )
+
     return dict(row)
 
 async def require_admin(usuario: dict = Depends(get_usuario_actual)) -> dict:
@@ -195,19 +219,34 @@ async def login(data: LoginRequest):
             cursor = conn.cursor()
             
         cursor.execute(f"SELECT * FROM usuarios WHERE username = {PL}", (data.username,))
-        row = cursor.fetchone()
+        usuario = cursor.fetchone()
 
-    if not row or not pwd_ctx.verify(data.password, row["password_h"]):
+    if not usuario:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Usuario o contraseña incorrectos.",
+        )
+    
+    if not verify_password(data.password, usuario["password_h"]):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario o contraseña incorrectos.",
         )
 
-    if not row["activo"]:
+    if not usuario["activo"]:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Usuario desactivado.",
         )
+
+    # Validar vencimiento de prueba en el login
+    if usuario["vencimiento_prueba"]:
+        vencimiento = datetime.fromisoformat(usuario["vencimiento_prueba"])
+        if datetime.utcnow() > vencimiento:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Tu período de prueba ha vencido.",
+            )
 
     with get_db() as conn:
         cursor = conn.cursor()
@@ -216,11 +255,14 @@ async def login(data: LoginRequest):
             (datetime.utcnow().isoformat(), data.username)
         )
 
-    token = crear_token(data.username, row["rol"])
+    token = crear_token(data.username, usuario["rol"])
     return {
         "access_token": token,
         "token_type": "bearer",
-        "usuario": {"username": row["username"], "rol": row["rol"]}
+        "usuario": {
+            "username": usuario["username"],
+            "rol": usuario["rol"]
+        }
     }
 
 @router.get("/me")
@@ -232,6 +274,7 @@ async def me(usuario: dict = Depends(get_usuario_actual)):
         activo=bool(usuario["activo"]),
         creado_en=usuario["creado_en"],
         ultimo_login=usuario.get("ultimo_login"),
+        vencimiento_prueba=usuario.get("vencimiento_prueba"),
     )
 
 @router.get("/usuarios", dependencies=[Depends(require_admin)])
@@ -241,23 +284,24 @@ async def listar_usuarios():
             cursor = conn.cursor(cursor_factory=__import__('psycopg2.extras').extras.RealDictCursor)
         else:
             cursor = conn.cursor()
-        cursor.execute("SELECT id, username, rol, activo, creado_en, ultimo_login FROM usuarios ORDER BY id")
+        cursor.execute("SELECT id, username, rol, activo, creado_en, ultimo_login, vencimiento_prueba FROM usuarios ORDER BY id")
         rows = cursor.fetchall()
     return [UsuarioOut(**dict(r)) for r in rows]
 
-@router.post("/usuarios", dependencies=[Depends(require_admin)], status_code=201)
+@router.post("/usuarios", status_code=201)
 async def crear_usuario(data: UsuarioCreate):
     try:
         with get_db() as conn:
             cursor = conn.cursor()
-            q = f"INSERT INTO usuarios (username, password_h, rol, activo, creado_en) VALUES ({PL}, {PL}, {PL}, 1, {PL})"
-            cursor.execute(q, (data.username, pwd_ctx.hash(data.password), data.rol, datetime.utcnow().isoformat()))
+            vencimiento = (datetime.utcnow() + timedelta(days=14)).isoformat()
+            q = f"INSERT INTO usuarios (username, password_h, rol, activo, creado_en, vencimiento_prueba) VALUES ({PL}, {PL}, {PL}, 1, {PL}, {PL})"
+            cursor.execute(q, (data.username, hash_password(data.password), data.rol, datetime.utcnow().isoformat(), vencimiento))
     except Exception as e:
         # Manejo genérico de duplicados (IntegrityError en ambos)
         if "unique" in str(e).lower() or "duplicate" in str(e).lower():
             raise HTTPException(status_code=409, detail=f"El usuario '{data.username}' ya existe.")
         raise HTTPException(status_code=400, detail=str(e))
-    return {"ok": True, "username": data.username}
+    return {"ok": True, "username": data.username, "vencimiento": vencimiento}
 
 @router.put("/usuarios/{username}")
 async def actualizar_usuario(username: str, data: UsuarioUpdate, usuario_actual: dict = Depends(get_usuario_actual)):
@@ -290,13 +334,17 @@ async def actualizar_usuario(username: str, data: UsuarioUpdate, usuario_actual:
             params.append(data.new_username)
         if data.password:
             sets.append(f"password_h = {PL}")
-            params.append(pwd_ctx.hash(data.password))
+            params.append(hash_password(data.password))
         if data.rol:
             sets.append(f"rol = {PL}")
             params.append(data.rol)
         if data.activo is not None:
             sets.append(f"activo = {PL}")
             params.append(1 if data.activo else 0)
+        if data.vencimiento_prueba is not None:
+            sets.append(f"vencimiento_prueba = {PL}")
+            # Si se envía string vacío, se guarda como NULL para que sea permanente
+            params.append(data.vencimiento_prueba if data.vencimiento_prueba != "" else None)
 
         if sets:
             params.append(username)

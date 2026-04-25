@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import axios from 'axios'
+import LandingPage from './LandingPage'
 import {
   PieChart, Pie, Cell, Legend, ResponsiveContainer
 } from 'recharts'
@@ -88,6 +89,19 @@ export default function App() {
     }
   }
 
+  const handleRegister = async ({ username, password, rol }) => {
+    setLoginError(null)
+    try {
+      await axios.post(`${API_BASE_URL}/auth/usuarios`, { username, password, rol })
+      // Auto-login tras registro
+      await handleLogin({ username, password })
+      return true
+    } catch (err) {
+      setLoginError(err.response?.data?.detail || "Error al crear cuenta.")
+      return false
+    }
+  }
+
   const handleLogout = () => {
     sessionStorage.removeItem('token')
     setToken(null)
@@ -164,7 +178,9 @@ export default function App() {
 
   // --- Login screen ---
   if (!token || !usuario) {
-    return <LoginScreen onLogin={handleLogin} error={loginError} />
+    if (view === 'terminos') return <PlaceholderPage title="Términos y Condiciones" onBack={() => setView('dashboard')} />
+    if (view === 'privacidad') return <PlaceholderPage title="Política de Privacidad" onBack={() => setView('dashboard')} />
+    return <LandingPage onLogin={handleLogin} onRegister={handleRegister} authError={loginError} setView={setView} />
   }
 
   const esAdmin = usuario?.rol === 'admin'
@@ -495,7 +511,7 @@ function PanelUsuarios({ usuario: adminActual }) {
   const [cargando, setCargando] = useState(true)
   const [error, setError] = useState(null)
   const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ username: '', password: '', rol: 'usuario' })
+  const [form, setForm] = useState({ username: '', password: '', rol: 'usuario', vencimiento_prueba: '' })
   const [editingUser, setEditingUser] = useState(null)
   const [formError, setFormError] = useState(null)
   const [guardando, setGuardando] = useState(false)
@@ -524,9 +540,9 @@ function PanelUsuarios({ usuario: adminActual }) {
       if (editingUser) {
         // Editar existente
         await api.put(`/auth/usuarios/${editingUser}`, {
-          new_username: form.username !== editingUser ? form.username : undefined,
           password: form.password ? form.password : undefined,
-          rol: form.rol
+          rol: form.rol,
+          vencimiento_prueba: form.vencimiento_prueba || "" // String vacío en el form -> NULL en DB (Permanente)
         })
       } else {
         // Crear nuevo
@@ -540,7 +556,7 @@ function PanelUsuarios({ usuario: adminActual }) {
       
       setShowForm(false)
       setEditingUser(null)
-      setForm({ username: '', password: '', rol: 'usuario' })
+      setForm({ username: '', password: '', rol: 'usuario', vencimiento_prueba: '' })
       cargar()
     } catch (err) {
       setFormError(err.response?.data?.detail || "Error al guardar usuario.")
@@ -549,7 +565,12 @@ function PanelUsuarios({ usuario: adminActual }) {
 
   const prepararEdicion = (u) => {
     setEditingUser(u.username)
-    setForm({ username: u.username, password: '', rol: u.rol })
+    setForm({ 
+      username: u.username, 
+      password: '', 
+      rol: u.rol, 
+      vencimiento_prueba: u.vencimiento_prueba ? u.vencimiento_prueba.split('T')[0] : '' 
+    })
     setShowForm(true)
   }
 
@@ -606,6 +627,12 @@ function PanelUsuarios({ usuario: adminActual }) {
               <option value="usuario">Usuario</option>
               <option value="admin">Administrador</option>
             </select>
+            <div className="flex flex-col gap-1">
+              <label className="text-[10px] font-black text-slate-500 uppercase ml-2">Vencimiento Prueba (vacío = permanente)</label>
+              <input type="date" value={form.vencimiento_prueba}
+                onChange={e => setForm(f => ({ ...f, vencimiento_prueba: e.target.value }))}
+                className="bg-brand-dark border border-white/10 rounded-2xl py-3 px-5 font-bold focus:ring-2 focus:ring-brand-blue/30 outline-none w-full" />
+            </div>
             {formError && <p className="text-rose-400 text-sm font-bold md:col-span-3">{formError}</p>}
             <div className="md:col-span-3 flex gap-3">
               <button type="submit" disabled={guardando}
@@ -631,6 +658,7 @@ function PanelUsuarios({ usuario: adminActual }) {
               <th className="px-8 py-5 text-left">Usuario</th>
               <th className="px-8 py-5 text-left">Rol</th>
               <th className="px-8 py-5 text-left">Estado</th>
+              <th className="px-8 py-5 text-left">Vence</th>
               <th className="px-8 py-5 text-left">Último login</th>
               <th className="px-8 py-5 text-left">Creado</th>
               <th className="px-8 py-5 text-right">Acciones</th>
@@ -638,7 +666,7 @@ function PanelUsuarios({ usuario: adminActual }) {
           </thead>
           <tbody className="divide-y divide-white/5">
             {cargando ? (
-              <tr><td colSpan={6} className="text-center py-12 text-slate-500">Cargando...</td></tr>
+              <tr><td colSpan={7} className="text-center py-12 text-slate-500">Cargando...</td></tr>
             ) : usuarios.map(u => (
               <tr key={u.id} className="hover:bg-white/2 transition-all">
                 <td className="px-8 py-5 font-black flex items-center space-x-3">
@@ -657,6 +685,15 @@ function PanelUsuarios({ usuario: adminActual }) {
                   <span className={`text-[10px] font-black uppercase px-3 py-1 rounded-full ${u.activo ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}`}>
                     {u.activo ? 'Activo' : 'Inactivo'}
                   </span>
+                </td>
+                <td className="px-8 py-5 text-xs font-bold">
+                  {u.vencimiento_prueba ? (
+                    <span className={`px-2 py-1 rounded-md ${new Date(u.vencimiento_prueba) < new Date() ? 'bg-rose-500/10 text-rose-400' : 'bg-brand-blue/10 text-brand-blue'}`}>
+                      {new Date(u.vencimiento_prueba).toLocaleDateString('es-AR')}
+                    </span>
+                  ) : (
+                    <span className="text-emerald-500 bg-emerald-500/10 px-2 py-1 rounded-md">PERMANENTE</span>
+                  )}
                 </td>
                 <td className="px-8 py-5 text-slate-400 text-xs">
                   {u.ultimo_login ? new Date(u.ultimo_login).toLocaleString('es-AR') : '—'}
@@ -811,6 +848,18 @@ function Spinner({ texto }) {
     <div className="flex items-center space-x-4">
       <div className="w-6 h-6 border-4 border-slate-700 border-t-white rounded-full animate-spin"></div>
       <span className="text-xs font-black tracking-widest uppercase">{texto}</span>
+    </div>
+  )
+}
+
+function PlaceholderPage({ title, onBack }) {
+  return (
+    <div className="h-screen w-full bg-brand-dark flex flex-col items-center justify-center p-10 text-center">
+      <h1 className="text-4xl font-black mb-4">{title}</h1>
+      <p className="text-slate-400 max-w-lg mb-8">Esta página está en construcción. Próximamente incluiremos toda la información legal y operativa de ContaFlex.</p>
+      <button onClick={onBack} className="bg-brand-blue text-white px-10 py-4 rounded-2xl font-black text-sm">
+        VOLVER AL INICIO
+      </button>
     </div>
   )
 }

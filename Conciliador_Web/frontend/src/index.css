@@ -10,6 +10,8 @@
   --border-color: rgba(255, 255, 255, 0.05);
   
   --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-landing: 'Sora', sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
   
   background-color: var(--bg-dark);
   color: var(--text-primary);
@@ -95,4 +97,53 @@ body {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+/* --- Landing Page Styles --- */
+:root {
+  --lp-navy: #0a0e1a;
+  --lp-navy2: #111827;
+  --lp-navy3: #1a2235;
+  --lp-card: #141c2e;
+  --lp-accent: #3b82f6;
+  --lp-accent2: #60a5fa;
+  --lp-accent-glow: rgba(59, 130, 246, 0.15);
+  --lp-green: #10b981;
+  --lp-muted: #94a3b8;
+  --lp-border: rgba(255, 255, 255, 0.08);
+  --lp-border2: rgba(59, 130, 246, 0.3);
+}
+
+.lp-hero-bg {
+  background: radial-gradient(ellipse 800px 600px at 50% 30%, rgba(59,130,246,0.12) 0%, transparent 70%), 
+              radial-gradient(ellipse 400px 300px at 20% 80%, rgba(16,185,129,0.06) 0%, transparent 60%);
+}
+
+.lp-grid-lines {
+  opacity: 0.04;
+  background-image: linear-gradient(var(--lp-accent) 1px, transparent 1px), 
+                    linear-gradient(90deg, var(--lp-accent) 1px, transparent 1px);
+  background-size: 60px 60px;
+}
+
+@keyframes lp-pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+.lp-animate-pulse { animation: lp-pulse 2s infinite; }
+
+@keyframes lp-fadeUp { from { opacity:0; transform: translateY(20px); } to { opacity:1; transform: translateY(0); } }
+.lp-animate-fadeUp { animation: lp-fadeUp 0.7s ease both; }
+
+.lp-btn-primary {
+  background: var(--lp-accent);
+  color: #fff;
+  transition: all 0.2s;
+}
+.lp-btn-primary:hover {
+  background: var(--lp-accent2);
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(59,130,246,0.35);
+}
+
+.lp-feature-card:hover {
+  border-color: rgba(59,130,246,0.3);
+  transform: translateY(-4px);
 }
