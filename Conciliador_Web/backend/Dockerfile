@@ -11,11 +11,11 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copiar todo el código del backend
+# Copiar todo (ahora que movimos los archivos aquí)
 COPY . .
 
 # Exponer puerto
 EXPOSE 8000
 
-# Comando simple (ahora que los imports están limpios)
+# Comando simple
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
