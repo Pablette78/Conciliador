@@ -2,20 +2,20 @@ FROM python:3.10-slim
 
 WORKDIR /app
 
-# Instalar dependencias del sistema necesarias
+# Instalar dependencias
 RUN apt-get update && apt-get install -y \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Copiar archivos de requerimientos e instalar
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copiar requerimientos e instalar (desde la raíz del build)
+COPY backend/requirements.txt ./backend/
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
-# Copiar el resto del código
+# Copiar todo el código de Conciliador_Web
 COPY . .
 
-# Exponer el puerto que usa FastAPI
+# Exponer puerto
 EXPOSE 8000
 
-# Comando para arrancar la app
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Comando para arrancar como módulo (esto arregla el error de "No module named backend")
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]
