@@ -99,7 +99,7 @@ def _crear_detalle_impuestos(wb, resultado, mes_anio):
 
 def _crear_conciliacion(wb, resultado, mes_anio):
     ws = wb.create_sheet(SH_CONC)
-    ws['A1'] = f'HOJA DE CONCILIACIÓN - {mes_anio}'; ws['A1'].font = Font(bold=True, size=14)
+    ws['A1'] = f'CONCILIACIÓN - {mes_anio}'; ws['A1'].font = Font(bold=True, size=14)
     _h(ws, 3, ['Fecha Bco', 'Déb Bco', 'Cré Bco', 'Concepto Bco', 'Fecha Sist', 'Debe Sist', 'Haber Sist', 'Ref Sist', 'Dif $', 'Estado', 'Dif Cruce'])
     r = 4; row_ini = r
     for it in resultado.conciliados:
@@ -174,7 +174,7 @@ def _llenar_resumen_clean(ws, resultado, datos_banco, mes_anio, rb, rs, ri, rc):
     r_audit = 12; ws.merge_cells(start_row=r_audit, start_column=col_d, end_row=r_audit, end_column=7); cl = ws.cell(row=r_audit, column=col_d, value='AUDITORÍA CRUZADA'); cl.fill = AZUL_HEADER; cl.font = TFW; cl.alignment = CA
     r_audit += 1; _h(ws, r_audit, ['Control', 'Suma Items', 'Valor Ref', 'Dif'], start_col=col_d)
     for l, fi, fr in [('Bco Déb', f"=+B{row_sb_d}+B{row_imp}+SUM('{SH_CONC}'!B{rc['row_ini']}:B{rc['row_fin']})", f"='{SH_BANCO}'!C{rb['row_totales']}"), ('Bco Cré', f"=+B{row_sb_c}+SUM('{SH_CONC}'!C{rc['row_ini']}:C{rc['row_fin']})", f"='{SH_BANCO}'!D{rb['row_totales']}"), ('Sist Debe', f"=+B{row_ss_d}+SUM('{SH_CONC}'!F{rc['row_ini']}:F{rc['row_fin']})", f"='{SH_SIST}'!E{rs['row_totales']}" if 'row_totales' in rs else '0'), ('Sist Hab', f"=+B{row_ss_h}+SUM('{SH_CONC}'!G{rc['row_ini']}:G{rc['row_fin']})", f"='{SH_SIST}'!F{rs['row_totales']}" if 'row_totales' in rs else '0')]:
-        r_audit += 1; ws.cell(row=r_audit, column=col_d, value=lbl).border = BD
+        r_audit += 1; ws.cell(row=r_audit, column=col_d, value=l).border = BD
         ws.cell(row=r_audit, column=5, value=fi).number_format = MF; ws.cell(row=r_audit, column=5).border = BD
         ws.cell(row=r_audit, column=6, value=fr).number_format = MF; ws.cell(row=r_audit, column=6).border = BD
         cd = ws.cell(row=r_audit, column=7, value=f'=+E{r_audit}-F{r_audit}'); cd.number_format = MF; cd.border = BD; cd.fill = VERDE_TOTAL

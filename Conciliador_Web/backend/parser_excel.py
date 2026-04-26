@@ -49,10 +49,11 @@ def _leer_hojas_xlsx(ruta):
 def _buscar_hoja_mayor(hojas):
     """Busca la hoja que contenga los movimientos del mayor"""
     for nombre, filas in hojas.items():
-        for fila in filas[:20]: # Escanear más profundo para encontrar la hoja correcta
+        for fila in filas[:5]:
             textos = ' '.join(str(c).upper() if c else '' for c in fila)
-            if 'FECHA' in textos and \
-               any(x in textos for x in ['DEBE', 'HABER', 'TOTAL', 'IMPORTE', 'VALOR', 'MONTO', 'DOCUMENTO']):
+            if ('FECHA' in textos and 'DEBE' in textos) or \
+               ('FECHA' in textos and 'HABER' in textos) or \
+               ('DOCUMENTO' in textos):
                 return nombre
     return max(hojas, key=lambda n: len(hojas[n]))
 
@@ -90,9 +91,6 @@ def _mapear_columnas(fila):
             'DEBITO', 'DÉBITO', 'DEBITOS', 'DÉBITOS',
         )
         if texto in NOMBRES_SALIDA and 'haber' not in col_map:
-            col_map['haber'] = col_idx
-        # Columna de plata genérica (Total o Importe) si faltan Debe/Haber
-        if any(x in texto for x in ['TOTAL', 'IMPORTE', 'VALOR', 'MONTO']) and 'haber' not in col_map:
             col_map['haber'] = col_idx
         if 'SALDO' in texto and 'saldo' not in col_map:
             col_map['saldo'] = col_idx
@@ -133,7 +131,7 @@ def parsear_excel(ruta_excel):
     # Encontrar fila de encabezados
     header_row_idx = None
     col_map = {}
-    for idx, fila in enumerate(filas[:20]): # Aumentado a 20 para archivos con muchos encabezados
+    for idx, fila in enumerate(filas[:10]):
         col_map = _mapear_columnas(fila)
         if 'fecha' in col_map and ('debe' in col_map or 'haber' in col_map):
             header_row_idx = idx
@@ -142,7 +140,7 @@ def parsear_excel(ruta_excel):
     if header_row_idx is None:
         raise Exception(
             f"No se encontraron encabezados válidos en la hoja '{nombre_hoja}'.\n"
-            f"El archivo debe tener columnas: Fecha, Debe/Haber o Total"
+            f"El archivo debe tener columnas: Fecha, Debe, Haber"
         )
 
     movimientos = []
