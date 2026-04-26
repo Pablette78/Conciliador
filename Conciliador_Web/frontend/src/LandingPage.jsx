@@ -271,9 +271,9 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
                     <form onSubmit={handleLoginSubmit} className="space-y-5">
                       <h3 className="text-xl font-bold">Bienvenido de vuelta</h3>
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Email</label>
+                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Usuario o Email</label>
                         <input 
-                          type="email" placeholder="tu@email.com" 
+                          type="text" placeholder="admin o tu@email.com" 
                           className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
                           value={loginForm.email} onChange={e => setLoginForm({...loginForm, email: e.target.value})}
                         />
@@ -318,9 +318,9 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
                         />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Email profesional</label>
+                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Nombre de Usuario o Email</label>
                         <input 
-                          type="email" placeholder="tu@email.com" 
+                          type="text" placeholder="Ej: pablo o tu@email.com" 
                           className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
                           value={regForm.email} onChange={e => setRegForm({...regForm, email: e.target.value})}
                         />
