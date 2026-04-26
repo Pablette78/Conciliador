@@ -16,22 +16,13 @@ from auth import init_db, get_usuario_actual, require_admin, get_db, PL, router 
 
 logger = get_logger("conciliador.main")
 
-# --- Rutas de importación (local + Docker) ---
-sys.path.append(os.path.abspath("../../Conciliador_v10"))
-sys.path.append(os.path.abspath("./Conciliador_v10"))
-
-try:
-    from core.models import Movimiento
-    from core.factory import FabricaParsers
-    from core.engine import MotorConciliacion
-    from core.utils import combinar_extractos, combinar_mayores
-    from parser_excel import parsear_excel
-    from generador_excel import generar_excel
-    from detector_banco import detectar_banco_con_confianza
-except ImportError:
-    from parser_excel import parsear_excel
-    from generador_excel import generar_excel
-    from detector_banco import detectar_banco_con_confianza
+from core.models import Movimiento
+from core.factory import FabricaParsers
+from core.engine import MotorConciliacion
+from core.utils import combinar_extractos, combinar_mayores
+from parser_excel import parsear_excel
+from generador_excel import generar_excel
+from detector_banco import detectar_banco_con_confianza
 
 # --- App ---
 app = FastAPI(title="Conciliador Bancario API", version="2.0")

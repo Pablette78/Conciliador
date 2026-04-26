@@ -23,9 +23,9 @@ from pydantic import BaseModel
 from mailer import enviar_verificacion, enviar_notificacion_upgrade, enviar_reset_password
 
 # --- Config ---
-SECRET_KEY = os.getenv("JWT_SECRET", secrets.token_hex(32))
+SECRET_KEY = os.getenv("JWT_SECRET", "conciliador-secret-key-permanente-2024")
 ALGORITHM = "HS256"
-TOKEN_EXPIRE_HORAS = int(os.getenv("TOKEN_EXPIRE_HORAS", "8"))
+TOKEN_EXPIRE_HORAS = int(os.getenv("TOKEN_EXPIRE_HORAS", "24"))
 DB_PATH = os.getenv("AUTH_DB_PATH", "./usuarios.db")
 DATABASE_URL = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
 
@@ -45,6 +45,13 @@ router = APIRouter(prefix="/auth", tags=["Autenticación"])
 
 # Lógica de placeholders: Postgres usa %s, SQLite usa ?
 PL = "%s" if DATABASE_URL else "?"
+
+# --- Límites por plan (definido acá arriba para uso en toda la app) ---
+PLAN_LIMITS = {
+    "Free": 5,
+    "Individual": 20,
+    "Estudio": 100
+}
 
 # --- Pydantic models ---
 class LoginRequest(BaseModel):
@@ -244,7 +251,7 @@ async def get_usuario_actual(
         else:
             cursor = conn.cursor()
             
-        cursor.execute(f"SELECT * FROM usuarios WHERE username = {PL} AND activo = 1", (username,))
+        cursor.execute(f"SELECT * FROM usuarios WHERE username = {PL}", (username,))
         row = cursor.fetchone()
 
     if not row:
@@ -357,10 +364,12 @@ async def me(usuario: dict = Depends(get_usuario_actual)):
         creado_en=usuario["creado_en"],
         ultimo_login=usuario.get("ultimo_login"),
         vencimiento_prueba=usuario.get("vencimiento_prueba"),
-        plan=usuario.get("plan", "Free"),
-        limite_mensual=usuario.get("limite_mensual", 5),
-        usos_mes_actual=usuario.get("usos_mes_actual", 0),
-        ultimo_mes_uso=usuario.get("ultimo_mes_uso")
+        plan=usuario.get("plan") or "Free",
+        limite_mensual=usuario.get("limite_mensual") or 5,
+        usos_mes_actual=usuario.get("usos_mes_actual") or 0,
+        ultimo_mes_uso=usuario.get("ultimo_mes_uso"),
+        email_verificado=bool(usuario.get("email_verificado", 0)),
+        plan_pendiente=usuario.get("plan_pendiente")
     )
 
 @router.get("/usuarios", dependencies=[Depends(require_admin)])
@@ -370,9 +379,21 @@ async def listar_usuarios():
             cursor = conn.cursor(cursor_factory=__import__('psycopg2.extras').extras.RealDictCursor)
         else:
             cursor = conn.cursor()
-        cursor.execute("SELECT id, username, rol, activo, creado_en, ultimo_login, vencimiento_prueba, plan, limite_mensual, usos_mes_actual, ultimo_mes_uso FROM usuarios ORDER BY id")
+        cursor.execute("SELECT id, username, rol, activo, creado_en, ultimo_login, vencimiento_prueba, plan, limite_mensual, usos_mes_actual, ultimo_mes_uso, email_verificado, plan_pendiente FROM usuarios ORDER BY id")
         rows = cursor.fetchall()
-    return [UsuarioOut(**dict(r)) for r in rows]
+    result = []
+    for r in rows:
+        d = dict(r)
+        d.setdefault("email_verificado", False)
+        d.setdefault("plan_pendiente", None)
+        d.setdefault("plan", "Free")
+        d.setdefault("limite_mensual", 5)
+        d.setdefault("usos_mes_actual", 0)
+        d.setdefault("ultimo_mes_uso", None)
+        d["email_verificado"] = bool(d["email_verificado"])
+        d["activo"] = bool(d["activo"])
+        result.append(UsuarioOut(**d))
+    return result
 
 @router.post("/usuarios", status_code=201)
 async def crear_usuario(data: UsuarioCreate):
@@ -383,7 +404,7 @@ async def crear_usuario(data: UsuarioCreate):
             token_verif = str(uuid.uuid4())
             
             # Si el plan no es Free, marcar como pendiente de aprobación inicial
-            plan_final = 'Free' if data.plan != 'Free' else 'Free'
+            plan_final = 'Free'
             limite_final = 5
             plan_pend = data.plan if data.plan != 'Free' else None
             token_aprob = str(uuid.uuid4()) if plan_pend else None
@@ -403,7 +424,7 @@ async def crear_usuario(data: UsuarioCreate):
         if "unique" in str(e).lower() or "duplicate" in str(e).lower():
             raise HTTPException(status_code=409, detail=f"El usuario '{data.username}' ya existe.")
         raise HTTPException(status_code=400, detail=str(e))
-    return {"ok": True, "username": data.username, "vencimiento": vencimiento}
+    return {"ok": True, "username": data.username}
 
 @router.put("/usuarios/{username}")
 async def actualizar_usuario(username: str, data: UsuarioUpdate, usuario_actual: dict = Depends(get_usuario_actual)):
@@ -477,12 +498,7 @@ async def verificar_email(token: str):
     
     return HTMLResponse("<h2>¡Email verificado con éxito! Ya podés usar ContaFlex.</h2><p><a href='/'>Ir al sitio</a></p>")
 
-# --- Planes y Upgrade (Aprobación) ---
-PLAN_LIMITS = {
-    "Free": 5,
-    "Individual": 20,
-    "Estudio": 100
-}
+# --- Upgrade (Aprobación) ---
 
 @router.post("/upgrade")
 async def solicitar_upgrade(plan_solicitado: str, usuario: dict = Depends(get_usuario_actual)):
