@@ -113,23 +113,44 @@ def init_db() -> None:
         if DATABASE_URL:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS usuarios (
-                    id          SERIAL PRIMARY KEY,
-                    username    TEXT UNIQUE NOT NULL,
-                    password_h  TEXT NOT NULL,
-                    rol         TEXT NOT NULL DEFAULT 'usuario',
-                    activo      INTEGER NOT NULL DEFAULT 1,
-                    creado_en   TEXT NOT NULL,
-                    ultimo_login TEXT,
-                    vencimiento_prueba TEXT
+                    id                  SERIAL PRIMARY KEY,
+                    username            TEXT UNIQUE NOT NULL,
+                    password_h          TEXT NOT NULL,
+                    rol                 TEXT NOT NULL DEFAULT 'usuario',
+                    activo              INTEGER NOT NULL DEFAULT 1,
+                    creado_en           TEXT NOT NULL,
+                    ultimo_login        TEXT,
+                    vencimiento_prueba  TEXT,
+                    plan                TEXT DEFAULT 'Free',
+                    limite_mensual      INTEGER DEFAULT 5,
+                    usos_mes_actual     INTEGER DEFAULT 0,
+                    ultimo_mes_uso      TEXT,
+                    email_verificado    INTEGER DEFAULT 0,
+                    verificacion_token  TEXT,
+                    reset_token         TEXT,
+                    plan_pendiente      TEXT,
+                    token_aprobacion_suscripcion TEXT
                 )
             """)
+            print("[AUTH] Tabla 'usuarios' verificada/creada en Postgres con todas las columnas.")
             
-            # Migración: Agregar vencimiento_prueba si no existe (Postgres)
-            try:
-                cursor.execute("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS vencimiento_prueba TEXT")
-                print("[AUTH] Columna 'vencimiento_prueba' verificada en Postgres.")
-            except Exception:
-                pass
+            # Asegurar columnas en Postgres
+            columnas_extra = [
+                ("plan", "TEXT DEFAULT 'Free'"),
+                ("limite_mensual", "INTEGER DEFAULT 5"),
+                ("usos_mes_actual", "INTEGER DEFAULT 0"),
+                ("ultimo_mes_uso", "TEXT"),
+                ("email_verificado", "INTEGER DEFAULT 0"),
+                ("verificacion_token", "TEXT"),
+                ("reset_token", "TEXT"),
+                ("plan_pendiente", "TEXT"),
+                ("token_aprobacion_suscripcion", "TEXT")
+            ]
+            for col, type_def in columnas_extra:
+                try:
+                    cursor.execute(f"ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS {col} {type_def}")
+                except Exception:
+                    pass
         else:
             cursor.execute("""
                 CREATE TABLE IF NOT EXISTS usuarios (
