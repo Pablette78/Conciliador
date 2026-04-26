@@ -18,4 +18,4 @@ COPY . .
 EXPOSE 8000
 
 # Comando para arrancar la app
-CMD ["uvicorn", "main_v10:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
