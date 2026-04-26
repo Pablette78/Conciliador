@@ -29,9 +29,9 @@ try:
     from generador_excel import generar_excel
     from detector_banco import detectar_banco_con_confianza
 except ImportError:
-    from backend.parser_excel import parsear_excel
-    from backend.generador_excel import generar_excel
-    from backend.detector_banco import detectar_banco_con_confianza
+    from parser_excel import parsear_excel
+    from generador_excel import generar_excel
+    from detector_banco import detectar_banco_con_confianza
 
 # --- App ---
 app = FastAPI(title="Conciliador Bancario API", version="2.0")
