@@ -113,6 +113,11 @@ def get_db():
 
 def init_db() -> None:
     """Crea la tabla de usuarios si no existe e inserta el admin por defecto."""
+    if DATABASE_URL:
+        print("[DATABASE] Configurada: POSTGRES")
+    else:
+        print("[DATABASE] ADVERTENCIA: DATABASE_URL no detectada. Usando SQLITE (los datos se perderán al reiniciar)")
+
     with get_db() as conn:
         cursor = conn.cursor()
         
@@ -317,6 +322,7 @@ async def login(data: LoginRequest):
         )
     
     if not verify_password(data.password, usuario["password_h"]):
+        print(f"[AUTH] Fallo de contraseña para usuario: {data.username}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Usuario o contraseña incorrectos.",
