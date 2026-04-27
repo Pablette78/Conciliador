@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { Lock, Check, Activity } from 'lucide-react';
 
-export default function LandingPage({ onLogin, onRegister, authError, setView }) {
+export default function LandingPage({ onLogin, onRegister, authError, onForgotPassword, setView }) {
   const [modalOpen, setModalOpen] = useState(false);
-  const [authTab, setAuthTab] = useState('login'); // 'login' or 'register'
-  const [successMode, setSuccessMode] = useState(false);
-  
+  const [authTab, setAuthTab] = useState('login'); // 'login' | 'register' | 'forgot'
+  const [successMode, setSuccessMode] = useState(false); // false | 'login' | 'registered' | 'forgot'
+
   // Form states
-  const [loginForm, setLoginForm] = useState({ email: '', pass: '' });
-  const [regForm, setRegForm] = useState({ name: '', email: '', pass: '', plan: 'Free' });
+  const [loginForm, setLoginForm]   = useState({ user: '', pass: '' });
+  const [regForm, setRegForm]       = useState({ username: '', email: '', pass: '', plan: 'Free' });
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
 
   const openModal = (tab) => {
     setAuthTab(tab);
@@ -18,23 +20,34 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
-    if (!loginForm.email || !loginForm.pass) return alert('Completá todos los campos');
-    const success = await onLogin({ username: loginForm.email, password: loginForm.pass });
-    if (success) setSuccessMode(true);
+    if (!loginForm.user || !loginForm.pass) return alert('Completá todos los campos');
+    const success = await onLogin({ username: loginForm.user, password: loginForm.pass });
+    if (success) setSuccessMode('login');
   };
 
   const handleRegisterSubmit = async (e) => {
     e.preventDefault();
-    if (!regForm.name || !regForm.email || !regForm.pass) return alert('Completá todos los campos');
+    if (!regForm.username || !regForm.email || !regForm.pass) return alert('Completá todos los campos');
     if (regForm.pass.length < 8) return alert('La contraseña debe tener al menos 8 caracteres');
-    
-    const success = await onRegister({ 
-      username: regForm.email, 
+    const result = await onRegister({
+      username: regForm.username,
+      email: regForm.email,
       password: regForm.pass,
       rol: 'usuario',
       plan: regForm.plan
     });
-    if (success) setSuccessMode(true);
+    if (result === 'registered') setSuccessMode('registered');
+  };
+
+  const handleForgotSubmit = async (e) => {
+    e.preventDefault();
+    if (!forgotEmail) return;
+    setForgotLoading(true);
+    try {
+      await onForgotPassword(forgotEmail);
+      setSuccessMode('forgot');
+    } catch { alert('Error al procesar la solicitud.'); }
+    finally { setForgotLoading(false); }
   };
 
   return (
@@ -198,7 +211,10 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
               </div>
             ))}
           </div>
-          <p className="text-center text-[#475569] text-xs mt-12 italic">¿No ves tu banco? Lo desarrollamos a medida sin costo adicional.</p>
+          <p className="text-center text-[#475569] text-xs mt-12 italic">
+            ¿No ves tu banco? Lo desarrollamos a medida sin costo adicional.<br/>
+            <a href="mailto:soporte@contaflex.ar" className="text-[#60a5fa] hover:underline mt-1 inline-block">soporte@contaflex.ar</a>
+          </p>
         </div>
       </section>
 
@@ -257,114 +273,150 @@ export default function LandingPage({ onLogin, onRegister, authError, setView })
             
             {!successMode ? (
               <>
-                <div className="flex border-b border-white/5">
-                  <button onClick={() => setAuthTab('login')} className={`flex-1 py-4 text-sm font-semibold border-b-2 transition-all ${authTab === 'login' ? 'text-[#60a5fa] border-[#3b82f6]' : 'text-[#94a3b8] border-transparent'}`}>
-                    Iniciar sesión
-                  </button>
-                  <button onClick={() => setAuthTab('register')} className={`flex-1 py-4 text-sm font-semibold border-b-2 transition-all ${authTab === 'register' ? 'text-[#60a5fa] border-[#3b82f6]' : 'text-[#94a3b8] border-transparent'}`}>
-                    Registrarse
-                  </button>
-                </div>
+                {/* Tabs — ocultas en modo forgot */}
+                {authTab !== 'forgot' && (
+                  <div className="flex border-b border-white/5">
+                    <button onClick={() => setAuthTab('login')} className={`flex-1 py-4 text-sm font-semibold border-b-2 transition-all ${authTab === 'login' ? 'text-[#60a5fa] border-[#3b82f6]' : 'text-[#94a3b8] border-transparent'}`}>
+                      Iniciar sesión
+                    </button>
+                    <button onClick={() => setAuthTab('register')} className={`flex-1 py-4 text-sm font-semibold border-b-2 transition-all ${authTab === 'register' ? 'text-[#60a5fa] border-[#3b82f6]' : 'text-[#94a3b8] border-transparent'}`}>
+                      Registrarse
+                    </button>
+                  </div>
+                )}
 
                 <div className="p-8">
-                  {authTab === 'login' ? (
+                  {/* LOGIN */}
+                  {authTab === 'login' && (
                     <form onSubmit={handleLoginSubmit} className="space-y-5">
                       <h3 className="text-xl font-bold">Bienvenido de vuelta</h3>
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Usuario o Email</label>
-                        <input 
-                          type="text" placeholder="admin o tu@email.com" 
+                        <input type="text" placeholder="usuario o tu@email.com"
                           className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
-                          value={loginForm.email} onChange={e => setLoginForm({...loginForm, email: e.target.value})}
-                        />
+                          value={loginForm.user} onChange={e => setLoginForm({...loginForm, user: e.target.value})} />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Contraseña</label>
-                        <input 
-                          type="password" placeholder="••••••••" 
+                        <input type="password" placeholder="••••••••"
                           className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
-                          value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})}
-                        />
+                          value={loginForm.pass} onChange={e => setLoginForm({...loginForm, pass: e.target.value})} />
                       </div>
                       <button type="submit" className="w-full bg-[#3b82f6] hover:bg-[#60a5fa] text-white py-3 rounded-xl font-semibold transition-all">
                         Ingresar al sistema →
                       </button>
-                      <button 
-                        type="button" 
-                        onClick={async () => {
-                          const email = prompt("Ingresá tu email para recuperar la clave:");
-                          if (email) {
-                            try {
-                              await onForgotPassword(email);
-                              alert("Si el email existe, recibirás instrucciones.");
-                            } catch { alert("Error al procesar solicitud."); }
-                          }
-                        }}
-                        className="w-full text-[10px] text-[#94a3b8] hover:text-[#60a5fa] transition-colors"
-                      >
+                      <button type="button" onClick={() => setAuthTab('forgot')}
+                        className="w-full text-[10px] text-[#94a3b8] hover:text-[#60a5fa] transition-colors">
                         ¿Olvidaste tu contraseña?
                       </button>
                       {authError && <p className="text-red-400 text-xs text-center font-medium">{authError}</p>}
                     </form>
-                  ) : (
-                    <form onSubmit={handleRegisterSubmit} className="space-y-5">
-                      <h3 className="text-xl font-bold">Crear cuenta gratis</h3>
+                  )}
+
+                  {/* REGISTRO */}
+                  {authTab === 'register' && (
+                    <form onSubmit={handleRegisterSubmit} className="space-y-4">
+                      <h3 className="text-xl font-bold">Crear cuenta</h3>
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Nombre completo</label>
-                        <input 
-                          type="text" placeholder="Tu Nombre" 
+                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Nombre de usuario</label>
+                        <input type="text" placeholder="Ej: pablo.ponti"
                           className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
-                          value={regForm.name} onChange={e => setRegForm({...regForm, name: e.target.value})}
-                        />
+                          value={regForm.username} onChange={e => setRegForm({...regForm, username: e.target.value})} />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Nombre de Usuario o Email</label>
-                        <input 
-                          type="text" placeholder="Ej: pablo o tu@email.com" 
+                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Email</label>
+                        <input type="email" placeholder="tu@email.com"
                           className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
-                          value={regForm.email} onChange={e => setRegForm({...regForm, email: e.target.value})}
-                        />
+                          value={regForm.email} onChange={e => setRegForm({...regForm, email: e.target.value})} />
                       </div>
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Contraseña</label>
-                        <input 
-                          type="password" placeholder="Mínimo 8 caracteres" 
+                        <input type="password" placeholder="Mínimo 8 caracteres"
                           className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
-                          value={regForm.pass} onChange={e => setRegForm({...regForm, pass: e.target.value})}
-                        />
+                          value={regForm.pass} onChange={e => setRegForm({...regForm, pass: e.target.value})} />
                       </div>
                       <div className="space-y-1.5">
-                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Plan Seleccionado</label>
-                        <select 
-                          className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
-                          value={regForm.plan} onChange={e => setRegForm({...regForm, plan: e.target.value})}
-                        >
-                          <option value="Free">Free (5 usos)</option>
-                          <option value="Individual">Individual (20 usos)</option>
-                          <option value="Estudio">Estudio (100 usos)</option>
+                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Plan</label>
+                        <select className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
+                          value={regForm.plan} onChange={e => setRegForm({...regForm, plan: e.target.value})}>
+                          <option value="Free">Free — 5 usos/mes (gratis)</option>
+                          <option value="Individual">Individual — 20 usos/mes</option>
+                          <option value="Estudio">Estudio — 100 usos/mes</option>
                         </select>
                       </div>
                       <button type="submit" className="w-full bg-[#3b82f6] hover:bg-[#60a5fa] text-white py-3 rounded-xl font-semibold transition-all">
-                        Crear mi cuenta gratis →
+                        Crear cuenta →
                       </button>
                       {authError && <p className="text-red-400 text-xs text-center font-medium">{authError}</p>}
+                    </form>
+                  )}
+
+                  {/* OLVIDÉ MI CONTRASEÑA */}
+                  {authTab === 'forgot' && (
+                    <form onSubmit={handleForgotSubmit} className="space-y-5">
+                      <button type="button" onClick={() => setAuthTab('login')}
+                        className="text-[#94a3b8] text-xs hover:text-white flex items-center gap-1">
+                        ← Volver al login
+                      </button>
+                      <h3 className="text-xl font-bold">Recuperar contraseña</h3>
+                      <p className="text-[#94a3b8] text-sm">Ingresá tu email o usuario y te enviamos un link para crear una nueva contraseña.</p>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Email o Usuario</label>
+                        <input type="text" placeholder="tu@email.com"
+                          className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-[#3b82f6]"
+                          value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} />
+                      </div>
+                      <button type="submit" disabled={forgotLoading}
+                        className="w-full bg-[#3b82f6] hover:bg-[#60a5fa] text-white py-3 rounded-xl font-semibold transition-all disabled:opacity-50">
+                        {forgotLoading ? 'Enviando...' : 'Enviar instrucciones →'}
+                      </button>
                     </form>
                   )}
                 </div>
               </>
             ) : (
+              /* SUCCESS SCREENS */
               <div className="p-12 text-center">
-                <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto mb-6">
-                  <Check className="text-[#10b981]" size={32} />
-                </div>
-                <h3 className="text-xl font-bold mb-2">¡Todo listo!</h3>
-                <p className="text-[#94a3b8] text-sm mb-8">Tu sesión está activa. Ya podés acceder a tu panel de control.</p>
-                <button 
-                  onClick={() => window.location.reload()} 
-                  className="w-full bg-[#10b981] hover:opacity-90 text-white py-3 rounded-xl font-semibold transition-all"
-                >
-                  Ir al panel →
-                </button>
+                {successMode === 'login' && (
+                  <>
+                    <div className="w-16 h-16 rounded-full bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center mx-auto mb-6">
+                      <Check className="text-[#10b981]" size={32} />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">¡Todo listo!</h3>
+                    <p className="text-[#94a3b8] text-sm mb-8">Tu sesión está activa.</p>
+                    <button onClick={() => window.location.reload()}
+                      className="w-full bg-[#10b981] hover:opacity-90 text-white py-3 rounded-xl font-semibold transition-all">
+                      Ir al panel →
+                    </button>
+                  </>
+                )}
+                {successMode === 'registered' && (
+                  <>
+                    <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center mx-auto mb-6">
+                      <Check className="text-[#60a5fa]" size={32} />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">¡Registro exitoso!</h3>
+                    <p className="text-[#94a3b8] text-sm mb-2">Te enviamos un email de verificación.</p>
+                    <p className="text-[#94a3b8] text-sm mb-8">Revisá tu casilla y hacé clic en el link para activar tu cuenta.</p>
+                    <button onClick={() => setModalOpen(false)}
+                      className="w-full bg-[#3b82f6] hover:opacity-90 text-white py-3 rounded-xl font-semibold transition-all">
+                      Entendido
+                    </button>
+                  </>
+                )}
+                {successMode === 'forgot' && (
+                  <>
+                    <div className="w-16 h-16 rounded-full bg-blue-500/10 border border-blue-500/30 flex items-center justify-center mx-auto mb-6">
+                      <Check className="text-[#60a5fa]" size={32} />
+                    </div>
+                    <h3 className="text-xl font-bold mb-2">Email enviado</h3>
+                    <p className="text-[#94a3b8] text-sm mb-8">Si el email existe en el sistema, recibirás las instrucciones para recuperar tu contraseña.</p>
+                    <button onClick={() => { setModalOpen(false); setSuccessMode(false); setAuthTab('login'); }}
+                      className="w-full bg-[#3b82f6] hover:opacity-90 text-white py-3 rounded-xl font-semibold transition-all">
+                      Volver al inicio
+                    </button>
+                  </>
+                )}
               </div>
             )}
           </div>

@@ -54,6 +54,9 @@ export default function App() {
   const [loginError, setLoginError] = useState(null)
   const [theme, setTheme]       = useState(() => localStorage.getItem('theme') || 'dark')
   const [loadingApp, setLoadingApp] = useState(true)
+  const [resetToken, setResetToken] = useState(null)
+  const [resetForm, setResetForm]   = useState({ pass: '', pass2: '' })
+  const [resetMsg, setResetMsg]     = useState(null)
 
   const [view, setView]         = useState('dashboard')
   const [banco, setBanco]       = useState("— auto —")
@@ -70,24 +73,13 @@ export default function App() {
     localStorage.setItem('theme', theme)
   }, [theme])
 
-  // Lógica de recuperación de contraseña y verificación
+  // Detectar reset_token en la URL al cargar
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const resetToken = urlParams.get('token');
-    // Si la URL contiene un token de reset, disparamos el prompt
-    if (window.location.pathname.includes('reset-password') || urlParams.has('token')) {
-       // Si es un reset
-       const esReset = window.location.pathname.includes('reset-password') || document.body.innerText.includes('Reset');
-       // Por ahora lo manejamos simple con un prompt si detectamos el parámetro
-       if (urlParams.has('token') && !token) {
-          const nueva = prompt("Ingresá tu nueva contraseña (mín. 8 caracteres):");
-          if (nueva) {
-             handleResetPassword(urlParams.get('token'), nueva)
-                .then(() => alert("¡Contraseña actualizada! Ya podés iniciar sesión."))
-                .catch(e => alert(e.response?.data?.detail || "Error al resetear clave."));
-          }
-          window.history.replaceState({}, document.title, "/");
-       }
+    const params = new URLSearchParams(window.location.search);
+    const rt = params.get('reset_token');
+    if (rt && !token) {
+      setResetToken(rt);
+      window.history.replaceState({}, document.title, '/');
     }
   }, []);
 
@@ -119,12 +111,11 @@ export default function App() {
     }
   }
 
-  const handleRegister = async ({ username, password, rol, plan }) => {
+  const handleRegister = async ({ username, password, email, rol, plan }) => {
     setLoginError(null)
     try {
-      await axios.post(`${API_BASE_URL}/auth/usuarios`, { username, password, rol, plan })
-      await handleLogin({ username, password })
-      return true
+      await axios.post(`${API_BASE_URL}/auth/usuarios`, { username, password, email, rol, plan })
+      return 'registered'
     } catch (err) {
       setLoginError(err.response?.data?.detail || "Error al registrarse.")
       return false
@@ -214,6 +205,43 @@ export default function App() {
   }, [resultado, tableTab])
 
   if (loadingApp) return <div className="h-screen w-full flex items-center justify-center bg-brand-dark"><Spinner texto="Iniciando ContaFlex..." /></div>
+
+  // Modal de reset de contraseña (se activa via ?reset_token=xxx)
+  if (resetToken) {
+    const handleReset = async (e) => {
+      e.preventDefault()
+      if (resetForm.pass !== resetForm.pass2) { setResetMsg('Las contraseñas no coinciden.'); return }
+      if (resetForm.pass.length < 8) { setResetMsg('Mínimo 8 caracteres.'); return }
+      try {
+        await handleResetPassword(resetToken, resetForm.pass)
+        setResetToken(null)
+        setResetMsg(null)
+        alert('¡Contraseña actualizada! Ya podés iniciar sesión.')
+      } catch (err) {
+        setResetMsg(err.response?.data?.detail || 'Token inválido o expirado.')
+      }
+    }
+    return (
+      <div className="h-screen w-full flex items-center justify-center bg-[#0a0e1a]">
+        <div className="bg-[#141c2e] border border-white/10 rounded-2xl w-full max-w-[400px] p-10">
+          <h2 className="text-2xl font-black mb-2">Nueva contraseña</h2>
+          <p className="text-[#94a3b8] text-sm mb-6">Ingresá tu nueva contraseña para ContaFlex.</p>
+          <form onSubmit={handleReset} className="space-y-4">
+            <input type="password" placeholder="Nueva contraseña (mín. 8 caracteres)"
+              className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-3 text-sm outline-none focus:border-[#3b82f6]"
+              value={resetForm.pass} onChange={e => setResetForm({...resetForm, pass: e.target.value})} />
+            <input type="password" placeholder="Repetir contraseña"
+              className="w-full bg-[#111827] border border-white/10 rounded-lg px-4 py-3 text-sm outline-none focus:border-[#3b82f6]"
+              value={resetForm.pass2} onChange={e => setResetForm({...resetForm, pass2: e.target.value})} />
+            {resetMsg && <p className="text-red-400 text-xs">{resetMsg}</p>}
+            <button type="submit" className="w-full bg-[#3b82f6] hover:bg-[#60a5fa] text-white py-3 rounded-xl font-semibold">
+              Guardar contraseña →
+            </button>
+          </form>
+        </div>
+      </div>
+    )
+  }
 
   if (!token || !usuario) {
     if (view === 'terminos') return <PlaceholderPage title="Términos y Condiciones" onBack={() => setView('dashboard')} />
