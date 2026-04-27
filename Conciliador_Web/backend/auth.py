@@ -113,11 +113,13 @@ def get_db():
 
 def init_db() -> None:
     """Crea la tabla de usuarios si no existe e inserta el admin por defecto."""
+    from logger import get_logger
+    l = get_logger("auth")
     if DATABASE_URL:
-        print("[DATABASE] Configurada: POSTGRES")
+        l.info("[DATABASE] Configurada: POSTGRES")
     else:
-        print("[DATABASE] ADVERTENCIA: DATABASE_URL no detectada. Usando SQLITE (los datos se perderán al reiniciar)")
-
+        l.error("[DATABASE] ADVERTENCIA: DATABASE_URL no detectada. Usando SQLITE.")
+    
     with get_db() as conn:
         cursor = conn.cursor()
         
