@@ -96,7 +96,7 @@ def get_db():
         import psycopg2
         from psycopg2.extras import RealDictCursor
         # En Postgres usamos RealDictCursor para tener acceso por nombre de columna
-        conn = psycopg2.connect(DATABASE_URL, sslmode="require")
+        conn = psycopg2.connect(DATABASE_URL)
         try:
             yield conn
             conn.commit()
