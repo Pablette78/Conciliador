@@ -330,7 +330,9 @@ async def login(data: LoginRequest):
             detail="Usuario o contraseña incorrectos.",
         )
 
-    if not usuario["activo"]:
+    # En Postgres, 'activo' puede ser NULL si se agregó después la columna. Lo tratamos como activo (True).
+    is_activo = usuario.get("activo")
+    if is_activo is not None and not is_activo:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Usuario desactivado.",
