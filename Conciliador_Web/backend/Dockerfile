@@ -14,8 +14,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copiar todo (ahora que movimos los archivos aquí)
 COPY . .
 
-# Exponer puerto
-EXPOSE 8000
+# Exponer puerto (Railway sobreescribe con $PORT)
+EXPOSE 8080
 
-# Comando simple
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}"]
