@@ -495,7 +495,7 @@ class App(TkinterDnD.Tk):
         if not ruta:
             return
         try:
-            generar_excel(t["resultado"], t["datos_banco"], ruta, t["periodo"], movimientos_sistema=t["movs_sistema"])
+            generar_excel(t["resultado"], t["datos_banco"], ruta, t["periodo"], movs_sist=t["movs_sistema"])
             messagebox.showinfo("Guardado", f"Archivo guardado:\n{ruta}\n\n"
                                 f"• {t['n_conc']} pares conciliados\n"
                                 f"• {t['n_diff']} diferencias de monto\n"

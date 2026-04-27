@@ -348,7 +348,10 @@ async def login(data: LoginRequest):
             )
 
     with get_db() as conn:
-        cursor = conn.cursor()
+        if DATABASE_URL:
+            cursor = conn.cursor(cursor_factory=__import__('psycopg2.extras').extras.RealDictCursor)
+        else:
+            cursor = conn.cursor()
         cursor.execute(
             f"UPDATE usuarios SET ultimo_login = {PL} WHERE username = {PL}",
             (datetime.utcnow().isoformat(), data.username)
@@ -370,7 +373,7 @@ async def me(usuario: dict = Depends(get_usuario_actual)):
         id=usuario["id"],
         username=usuario["username"],
         rol=usuario["rol"],
-        activo=bool(usuario["activo"]),
+        activo=bool(usuario["activo"]) if usuario.get("activo") is not None else True,
         creado_en=usuario["creado_en"],
         ultimo_login=usuario.get("ultimo_login"),
         vencimiento_prueba=usuario.get("vencimiento_prueba"),
