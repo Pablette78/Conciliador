@@ -188,7 +188,7 @@ async def conciliar(
         nombre_banco = re.sub(r'[^\w]', '_', banco_final)
         filename = f"Conciliacion_{nombre_banco}.xlsx"
         ruta_resultado = os.path.join(RESULTS_DIR, f"{file_id}_{filename}")
-        generar_excel(resultado, datos_comb, ruta_resultado, "Web", movimientos_sistema=movs_sis)
+        generar_excel(resultado, datos_comb, ruta_resultado, "Web", movs_sist=movs_sis)
         logger.info(f"Excel generado: {filename} por '{usuario['username']}'")
 
         # Incrementar contador de uso
@@ -225,9 +225,9 @@ async def conciliar(
 
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
         logger.exception("Error inesperado en /api/conciliar")
-        raise HTTPException(status_code=500, detail="Error interno del servidor.")
+        raise HTTPException(status_code=500, detail=f"Error interno: {type(e).__name__}: {str(e)}")
     finally:
         shutil.rmtree(proc_dir, ignore_errors=True)
 

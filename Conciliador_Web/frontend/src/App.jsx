@@ -415,7 +415,7 @@ function Dashboard({
           <div className="card-premium p-10 bg-gradient-to-br from-emerald-500/10 to-transparent border-emerald-500/20 text-center">
             <h3 className="text-3xl font-black mb-2">Reporte Generado</h3>
             <p className="text-slate-400 text-sm mb-6">{resultado.banco} · {resultado.summary.titular}</p>
-            <button onClick={handleDownload} disabled={downloading}
+            <button onClick={onDownload} disabled={downloading}
               className={`px-12 py-5 rounded-3xl font-black text-xl flex items-center space-x-4 mx-auto shadow-2xl transition-all ${downloading ? 'bg-slate-700 text-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-500/30 hover:scale-105'}`}>
               {downloading ? <Spinner texto="Descargando..." /> : <><Download size={24}/><span>DESCARGAR EXCEL</span></>}
             </button>
