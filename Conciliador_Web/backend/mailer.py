@@ -1,16 +1,15 @@
 import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
+import logging
+import requests
 
-SMTP_HOST = os.getenv("SMTP_HOST", "smtp.hostinger.com")
-SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
-SMTP_USER = os.getenv("SMTP_USER")
-SMTP_PASS = os.getenv("SMTP_PASS")
-USE_SSL   = os.getenv("USE_SSL", "true").lower() == "true"
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "pablo.ponti@gmail.com")
-BASE_URL  = os.getenv("FRONTEND_URL", "https://contaflex.ar")
-API_URL   = os.getenv("API_URL", "https://conciliador-production-5319.up.railway.app")
+BREVO_API_KEY  = os.getenv("BREVO_API_KEY", "")
+SENDER_EMAIL   = os.getenv("SMTP_USER", "soporte@contaflex.ar")
+SENDER_NAME    = "ContaFlex"
+ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "pablo.ponti@gmail.com")
+BASE_URL       = os.getenv("FRONTEND_URL", "https://contaflex.ar")
+API_URL        = os.getenv("API_URL", "https://conciliador-production-5319.up.railway.app")
+
+log = logging.getLogger("mailer")
 
 _BTN_BLUE  = "display:inline-block;padding:14px 28px;background:#3b82f6;color:white;text-decoration:none;border-radius:8px;font-weight:bold;margin:20px 0;"
 _BTN_GREEN = "display:inline-block;padding:14px 28px;background:#10b981;color:white;text-decoration:none;border-radius:8px;font-weight:bold;margin:20px 0;"
@@ -19,36 +18,35 @@ _FOOTER    = "<hr style='border-color:#1e293b;margin:30px 0;'><p style='color:#4
 
 
 def send_email(to_email: str, subject: str, html_content: str) -> bool:
-    """Envio generico. Soporta SSL directo (465) y STARTTLS (587)."""
-    import logging
-    log = logging.getLogger("mailer")
-    log.setLevel(logging.DEBUG)
+    """Envio via Brevo API (HTTP) — no usa SMTP, funciona desde Railway."""
+    log.info(f"[MAILER] Enviando a {to_email} via Brevo API")
 
-    log.info(f"[MAILER] Intentando enviar a {to_email} | host={SMTP_HOST}:{SMTP_PORT} | ssl={USE_SSL} | user={SMTP_USER}")
-
-    if not SMTP_USER or not SMTP_PASS:
-        log.error(f"[MAILER] Sin credenciales SMTP — email NO enviado.")
+    if not BREVO_API_KEY:
+        log.error("[MAILER] Sin BREVO_API_KEY — email NO enviado.")
         return False
     try:
-        msg = MIMEMultipart()
-        msg["From"]    = f"ContaFlex <{SMTP_USER}>"
-        msg["To"]      = to_email
-        msg["Subject"] = subject
-        msg.attach(MIMEText(html_content, "html"))
-
-        if USE_SSL:
-            server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10)
+        resp = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": BREVO_API_KEY,
+                "Content-Type": "application/json",
+            },
+            json={
+                "sender": {"name": SENDER_NAME, "email": SENDER_EMAIL},
+                "to": [{"email": to_email}],
+                "subject": subject,
+                "htmlContent": html_content,
+            },
+            timeout=15,
+        )
+        if resp.status_code in (200, 201):
+            log.info(f"[MAILER] OK — email enviado a {to_email}")
+            return True
         else:
-            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
-            server.starttls()
-
-        server.login(SMTP_USER, SMTP_PASS)
-        server.send_message(msg)
-        server.quit()
-        log.info(f"[MAILER] OK — email enviado a {to_email}")
-        return True
+            log.error(f"[MAILER] Brevo error {resp.status_code}: {resp.text}")
+            return False
     except Exception as e:
-        log.error(f"[MAILER] ERROR enviando a {to_email}: {type(e).__name__}: {e}")
+        log.error(f"[MAILER] ERROR: {type(e).__name__}: {e}")
         return False
 
 
