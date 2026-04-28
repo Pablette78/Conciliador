@@ -55,9 +55,9 @@ def _headers(idempotency_key: str = "") -> dict:
 
 def get_init_point(usuario_id: int, plan: str) -> dict:
     """
-    Devuelve el init_point del plan MP con back_url que incluye usuario_id y plan.
-    Cuando el usuario completa el pago, MP redirige al backend con esos datos
-    para poder activar el plan sin depender del email del pagador.
+    Devuelve el init_point del plan MP.
+    La back_url del plan apunta al frontend — MP le agrega ?preapproval_id=XXX
+    al redirigir, y el frontend llama a /auth/mp-confirm para activar el plan.
 
     Retorna: { "init_point": str }
     Lanza ValueError si el plan no tiene ID configurado.
@@ -70,32 +70,16 @@ def get_init_point(usuario_id: int, plan: str) -> dict:
             f"Creá el plan en MP y configurá la variable de entorno."
         )
 
-    # Actualizar el plan en MP con back_url específica por usuario
-    # para poder identificarlo cuando vuelva del checkout
-    API_URL = os.getenv("API_URL", "https://conciliador-production-5319.up.railway.app")
-    back_url = f"{API_URL}/auth/mp-return/{usuario_id}/{plan}"
-
-    resp = requests.patch(
-        f"{MP_API}/preapproval_plan/{plan_id}",
-        json={"back_url": back_url},
-        headers=_headers(),
-        timeout=15,
-    )
-    # Aunque falle el patch, igual devolvemos el init_point guardado
-    if resp.status_code not in (200, 201):
-        log.warning(f"[MP] No se pudo actualizar back_url del plan: {resp.status_code}")
-
-    # Consultar el plan para obtener el init_point oficial
-    resp2 = requests.get(
+    resp = requests.get(
         f"{MP_API}/preapproval_plan/{plan_id}",
         headers=_headers(),
         timeout=15,
     )
-    if resp2.status_code != 200:
-        log.error(f"[MP] Error consultando plan {plan_id}: {resp2.status_code} {resp2.text}")
-        raise RuntimeError(f"Mercado Pago error {resp2.status_code}: {resp2.text}")
+    if resp.status_code != 200:
+        log.error(f"[MP] Error consultando plan {plan_id}: {resp.status_code} {resp.text}")
+        raise RuntimeError(f"Mercado Pago error {resp.status_code}: {resp.text}")
 
-    data = resp2.json()
+    data = resp.json()
     init_point = data.get("init_point")
     if not init_point:
         raise RuntimeError(f"MP no devolvió init_point para el plan {plan_id}")
@@ -104,28 +88,26 @@ def get_init_point(usuario_id: int, plan: str) -> dict:
     return {"init_point": init_point}
 
 
-def buscar_suscripcion_activa(plan_id: str, payer_email: str = "") -> dict | None:
+def verificar_preapproval(preapproval_id: str) -> dict | None:
     """
-    Busca una suscripción activa (preapproval) para un plan dado.
-    Filtra por payer_email si se provee.
-    Retorna el preapproval o None.
+    Consulta un preapproval específico en MP y lo retorna si está autorizado.
+    Retorna None si no existe o no está autorizado.
     """
-    params = {"preapproval_plan_id": plan_id, "status": "authorized"}
-    if payer_email:
-        params["payer_email"] = payer_email
-
     resp = requests.get(
-        f"{MP_API}/preapproval/search",
-        params=params,
+        f"{MP_API}/preapproval/{preapproval_id}",
         headers=_headers(),
         timeout=15,
     )
     if resp.status_code != 200:
-        log.error(f"[MP] Error buscando suscripcion: {resp.status_code} {resp.text}")
+        log.error(f"[MP] Error consultando preapproval {preapproval_id}: {resp.status_code}")
         return None
 
-    results = resp.json().get("results", [])
-    return results[0] if results else None
+    data = resp.json()
+    if data.get("status") != "authorized":
+        log.info(f"[MP] preapproval {preapproval_id} estado={data.get('status')} — no autorizado")
+        return None
+
+    return data
 
 
 def cancelar_suscripcion(preapproval_id: str) -> bool:

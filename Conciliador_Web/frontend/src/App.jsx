@@ -83,6 +83,25 @@ export default function App() {
     }
   }, []);
 
+  // Confirmar pago de Mercado Pago cuando vuelve del checkout
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const preapprovalId = params.get('preapproval_id');
+    if (preapprovalId && token) {
+      window.history.replaceState({}, document.title, '/');
+      api.post(`/auth/mp-confirm?preapproval_id=${preapprovalId}`)
+        .then(res => {
+          if (res.data?.ok) {
+            alert(`✅ ¡Suscripción activada! Plan ${res.data.plan} habilitado.`);
+            cargarUsuario();
+          }
+        })
+        .catch(err => {
+          alert(err.response?.data?.detail || 'El pago está siendo procesado. Si ya pagaste, tu plan se activará en breve.');
+        });
+    }
+  }, [token]);
+
   const cargarUsuario = useCallback(async () => {
     try {
       const r = await api.get('/auth/me')
