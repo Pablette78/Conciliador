@@ -20,9 +20,14 @@ _FOOTER    = "<hr style='border-color:#1e293b;margin:30px 0;'><p style='color:#4
 
 def send_email(to_email: str, subject: str, html_content: str) -> bool:
     """Envio generico. Soporta SSL directo (465) y STARTTLS (587)."""
+    import logging
+    log = logging.getLogger("mailer")
+    log.setLevel(logging.DEBUG)
+
+    log.info(f"[MAILER] Intentando enviar a {to_email} | host={SMTP_HOST}:{SMTP_PORT} | ssl={USE_SSL} | user={SMTP_USER}")
+
     if not SMTP_USER or not SMTP_PASS:
-        print(f"[MAILER] Sin credenciales — email para {to_email} NO enviado.")
-        print(f"  ASUNTO: {subject}")
+        log.error(f"[MAILER] Sin credenciales SMTP — email NO enviado.")
         return False
     try:
         msg = MIMEMultipart()
@@ -40,10 +45,10 @@ def send_email(to_email: str, subject: str, html_content: str) -> bool:
         server.login(SMTP_USER, SMTP_PASS)
         server.send_message(msg)
         server.quit()
-        print(f"[MAILER] OK — email enviado a {to_email}: {subject}")
+        log.info(f"[MAILER] OK — email enviado a {to_email}")
         return True
     except Exception as e:
-        print(f"[MAILER] ERROR enviando a {to_email}: {e}")
+        log.error(f"[MAILER] ERROR enviando a {to_email}: {type(e).__name__}: {e}")
         return False
 
 
