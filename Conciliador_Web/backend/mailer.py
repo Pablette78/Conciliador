@@ -32,9 +32,9 @@ def send_email(to_email: str, subject: str, html_content: str) -> bool:
         msg.attach(MIMEText(html_content, "html"))
 
         if USE_SSL:
-            server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT)
+            server = smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, timeout=10)
         else:
-            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT)
+            server = smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10)
             server.starttls()
 
         server.login(SMTP_USER, SMTP_PASS)
