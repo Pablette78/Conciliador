@@ -159,6 +159,7 @@ def init_db() -> None:
                 ("reset_token",                  "TEXT"),
                 ("plan_pendiente",               "TEXT"),
                 ("token_aprobacion_suscripcion", "TEXT"),
+                ("mp_preapproval_id",            "TEXT"),
             ]:
                 try:
                     cur.execute(f"ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS {col} {typedef}")
@@ -190,6 +191,7 @@ def init_db() -> None:
                 ("reset_token",                  "TEXT"),
                 ("plan_pendiente",               "TEXT"),
                 ("token_aprobacion_suscripcion", "TEXT"),
+                ("mp_preapproval_id",            "TEXT"),
             ]:
                 try:
                     cur.execute(f"ALTER TABLE usuarios ADD COLUMN {col} {typedef}")
@@ -566,6 +568,59 @@ async def aprobar_suscripcion(token: str):
       <p>Se le envio un email de confirmacion a {email_dest}.</p>
     </div></body></html>
     """)
+
+
+# --- Suscripciones Mercado Pago ---
+
+@router.post("/subscribe")
+async def iniciar_suscripcion(plan: str, usuario: dict = Depends(get_usuario_actual)):
+    """
+    Crea una suscripción recurrente en MP para el plan solicitado.
+    Devuelve { init_point, preapproval_id } para redirigir al usuario al checkout.
+    """
+    from payments import crear_suscripcion, PLAN_PRECIOS
+    if plan not in PLAN_PRECIOS:
+        raise HTTPException(status_code=400, detail=f"Plan '{plan}' no válido para suscripción.")
+    if plan == usuario.get("plan"):
+        raise HTTPException(status_code=400, detail="Ya tenés este plan activo.")
+
+    email = usuario.get("email") or ""
+    if not email:
+        raise HTTPException(status_code=400, detail="Necesitás tener un email registrado para suscribirte.")
+
+    try:
+        result = crear_suscripcion(usuario["id"], usuario["username"], email, plan)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    # Guardar preapproval_id pendiente en la DB
+    with get_db() as conn:
+        cur = _cursor(conn)
+        cur.execute(
+            f"UPDATE usuarios SET plan_pendiente={PL}, mp_preapproval_id={PL} WHERE id={PL}",
+            (plan, result["preapproval_id"], usuario["id"])
+        )
+
+    return result
+
+
+@router.post("/cancel-subscription")
+async def cancelar_suscripcion_usuario(usuario: dict = Depends(get_usuario_actual)):
+    """Cancela la suscripción activa del usuario en MP y lo baja a Free."""
+    from payments import cancelar_suscripcion
+    preapproval_id = usuario.get("mp_preapproval_id")
+    if not preapproval_id:
+        raise HTTPException(status_code=400, detail="No tenés una suscripción activa en MP.")
+
+    cancelar_suscripcion(preapproval_id)
+
+    with get_db() as conn:
+        cur = _cursor(conn)
+        cur.execute(
+            f"UPDATE usuarios SET plan='Free', limite_mensual=5, mp_preapproval_id=NULL, plan_pendiente=NULL WHERE id={PL}",
+            (usuario["id"],)
+        )
+    return {"ok": True, "message": "Suscripción cancelada. Tu plan volvió a Free."}
 
 
 # --- Recuperacion de contrasena ---

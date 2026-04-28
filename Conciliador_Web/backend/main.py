@@ -7,12 +7,12 @@ import re
 from typing import List
 from datetime import datetime
 
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends, Request, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 
 from logger import get_logger
-from auth import init_db, get_usuario_actual, require_admin, get_db, PL, router as auth_router
+from auth import init_db, get_usuario_actual, require_admin, get_db, PL, PLAN_LIMITS, _cursor, router as auth_router
 
 logger = get_logger("conciliador.main")
 
@@ -250,6 +250,82 @@ async def download_file(file_id: str, usuario: dict = Depends(get_usuario_actual
                 filename=display_name,
             )
     raise HTTPException(status_code=404, detail="Archivo no encontrado.")
+
+
+# --- Webhook Mercado Pago ---
+
+@app.post("/webhooks/mp")
+async def webhook_mp(
+    request: Request,
+    x_signature:  str = Header(default="", alias="x-signature"),
+    x_request_id: str = Header(default="", alias="x-request-id"),
+):
+    """
+    Recibe notificaciones de MP para suscripciones (preapproval).
+    MP envía: { type, action, data: { id } }
+    Documentación: https://www.mercadopago.com.ar/developers/es/docs/subscriptions/additional-content/notifications/webhooks
+    """
+    from payments import obtener_suscripcion, validar_firma_webhook
+
+    body = await request.json()
+    logger.info(f"[MP Webhook] {body.get('type')} action={body.get('action')} data={body.get('data')}")
+
+    data_id = (body.get("data") or {}).get("id", "")
+
+    # Validar firma solo cuando hay secret configurado
+    if x_signature and not validar_firma_webhook(x_signature, x_request_id, data_id):
+        logger.warning(f"[MP Webhook] Firma inválida — descartado. data_id={data_id}")
+        raise HTTPException(status_code=401, detail="Firma inválida.")
+
+    # Solo procesar eventos de suscripción
+    if body.get("type") != "subscription_preapproval":
+        return {"ok": True, "skipped": True}
+
+    if not data_id:
+        return {"ok": True, "skipped": True}
+
+    try:
+        sub = obtener_suscripcion(data_id)
+    except Exception as e:
+        logger.error(f"[MP Webhook] Error consultando suscripcion {data_id}: {e}")
+        raise HTTPException(status_code=502, detail="No se pudo consultar la suscripción en MP.")
+
+    estado       = sub.get("status")           # authorized | paused | cancelled | pending
+    external_ref = sub.get("external_reference", "")   # "usuario_id:plan"
+    preapproval_id = sub.get("id", data_id)
+
+    logger.info(f"[MP Webhook] preapproval_id={preapproval_id} estado={estado} ref={external_ref}")
+
+    # Parsear external_reference "usuario_id:plan"
+    try:
+        uid_str, plan = external_ref.split(":", 1)
+        usuario_id = int(uid_str)
+    except (ValueError, AttributeError):
+        logger.error(f"[MP Webhook] external_reference mal formado: {external_ref}")
+        return {"ok": True, "skipped": True}
+
+    with get_db() as conn:
+        cur = _cursor(conn)
+
+        if estado == "authorized":
+            # Pago confirmado → activar plan
+            nuevo_limite = PLAN_LIMITS.get(plan, 5)
+            cur.execute(
+                f"UPDATE usuarios SET plan={PL}, limite_mensual={PL}, activo=1, "
+                f"plan_pendiente=NULL, mp_preapproval_id={PL} WHERE id={PL}",
+                (plan, nuevo_limite, preapproval_id, usuario_id)
+            )
+            logger.info(f"[MP Webhook] Plan {plan} activado para usuario_id={usuario_id}")
+
+        elif estado in ("cancelled", "paused"):
+            # Pago fallido o cancelado → bajar a Free
+            cur.execute(
+                f"UPDATE usuarios SET plan='Free', limite_mensual=5, mp_preapproval_id=NULL WHERE id={PL}",
+                (usuario_id,)
+            )
+            logger.info(f"[MP Webhook] Plan revertido a Free para usuario_id={usuario_id} (estado MP: {estado})")
+
+    return {"ok": True}
 
 
 if __name__ == "__main__":
