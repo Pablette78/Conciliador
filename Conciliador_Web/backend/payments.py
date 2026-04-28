@@ -1,15 +1,21 @@
 """
-Integración Mercado Pago — suscripciones recurrentes (preapproval).
+Integración Mercado Pago — suscripciones recurrentes (preapproval_plan).
+
+Flujo:
+  1. Los planes Individual y Estudio se crean UNA SOLA VEZ en MP via preapproval_plan.
+  2. Sus IDs se guardan como variables de entorno (MP_PLAN_ID_INDIVIDUAL / MP_PLAN_ID_ESTUDIO).
+  3. Cuando un usuario quiere suscribirse, se lo redirige al init_point del plan.
+  4. MP crea un preapproval (suscripción) para ese usuario y dispara webhook.
+  5. El webhook activa el plan en la DB usando external_reference = "usuario_id:plan".
 
 Variables de entorno requeridas:
-  MP_ACCESS_TOKEN      — token activo (TEST-... o APP_USR-...)
-  MP_WEBHOOK_SECRET    — secret para validar notificaciones (lo generás vos)
+  MP_ACCESS_TOKEN       — token activo (TEST-... o APP_USR-...)
+  MP_WEBHOOK_SECRET     — secret para validar firmas de webhooks (generado por MP)
+  MP_PLAN_ID_INDIVIDUAL — ID del plan Individual en MP (preapproval_plan)
+  MP_PLAN_ID_ESTUDIO    — ID del plan Estudio en MP (preapproval_plan)
 
 Variables opcionales:
-  MP_PRECIO_INDIVIDUAL — precio ARS mensual plan Individual (default: 14900)
-  MP_PRECIO_ESTUDIO    — precio ARS mensual plan Estudio    (default: 32500)
-  API_URL              — URL pública del backend (para el back_url del checkout)
-  FRONTEND_URL         — URL del frontend (para redirigir al usuario)
+  FRONTEND_URL          — URL del frontend (default: https://contaflex.ar)
 """
 
 import os
@@ -22,21 +28,21 @@ log = logging.getLogger("payments")
 
 MP_ACCESS_TOKEN   = os.getenv("MP_ACCESS_TOKEN", "")
 MP_WEBHOOK_SECRET = os.getenv("MP_WEBHOOK_SECRET", "")
-API_URL           = os.getenv("API_URL", "https://conciliador-production-5319.up.railway.app")
 FRONTEND_URL      = os.getenv("FRONTEND_URL", "https://contaflex.ar")
 
+# IDs de planes creados en MP (preapproval_plan)
+PLAN_IDS = {
+    "Individual": os.getenv("MP_PLAN_ID_INDIVIDUAL", ""),
+    "Estudio":    os.getenv("MP_PLAN_ID_ESTUDIO",    ""),
+}
+
+# Para referencia de precios (usado en el frontend)
 PLAN_PRECIOS = {
-    "Individual": int(os.getenv("MP_PRECIO_INDIVIDUAL", "14900")),
-    "Estudio":    int(os.getenv("MP_PRECIO_ESTUDIO",    "32500")),
+    "Individual": 14900,
+    "Estudio":    32500,
 }
 
 MP_API = "https://api.mercadopago.com"
-
-HEADERS = lambda: {
-    "Authorization": f"Bearer {MP_ACCESS_TOKEN}",
-    "Content-Type": "application/json",
-    "X-Idempotency-Key": "",  # se sobreescribe por llamada
-}
 
 
 def _headers(idempotency_key: str = "") -> dict:
@@ -47,51 +53,31 @@ def _headers(idempotency_key: str = "") -> dict:
     }
 
 
-def crear_suscripcion(usuario_id: int, username: str, email: str, plan: str) -> dict:
+def get_init_point(usuario_id: int, plan: str) -> dict:
     """
-    Crea una suscripción preapproval en MP y devuelve:
-      { "init_point": str, "preapproval_id": str }
+    Devuelve el init_point del plan MP para redirigir al usuario al checkout.
+    Usa preapproval_plan — el plan ya existe en MP, no se crea por usuario.
 
-    Lanza ValueError si el plan no tiene precio configurado.
-    Lanza RuntimeError si MP responde con error.
+    Retorna: { "init_point": str }
+    Lanza ValueError si el plan no tiene ID configurado.
     """
-    if plan not in PLAN_PRECIOS:
-        raise ValueError(f"Plan '{plan}' no tiene precio configurado para MP.")
+    plan_id = PLAN_IDS.get(plan, "")
+    if not plan_id:
+        raise ValueError(
+            f"Plan '{plan}' no tiene MP_PLAN_ID configurado. "
+            f"Creá el plan en MP y configurá la variable de entorno."
+        )
 
-    precio = PLAN_PRECIOS[plan]
-    import uuid
-    idempotency = str(uuid.uuid4())
-
-    payload = {
-        "reason": f"ContaFlex — Plan {plan}",
-        "auto_recurring": {
-            "frequency":      1,
-            "frequency_type": "months",
-            "transaction_amount": precio,
-            "currency_id": "ARS",
-        },
-        "back_url": f"{FRONTEND_URL}/planes?suscripcion=ok",
-        "external_reference": f"{usuario_id}:{plan}",
-        "status": "pending",
-    }
-
-    resp = requests.post(
-        f"{MP_API}/preapproval",
-        json=payload,
-        headers=_headers(idempotency),
-        timeout=15,
+    # El init_point del plan ya incluye el link de checkout.
+    # Agregamos external_reference como query param para identificar al usuario en el webhook.
+    init_point = (
+        f"https://www.mercadopago.com.ar/subscriptions/checkout"
+        f"?preapproval_plan_id={plan_id}"
+        f"&external_reference={usuario_id}:{plan}"
     )
 
-    if resp.status_code not in (200, 201):
-        log.error(f"[MP] Error crear suscripcion: {resp.status_code} {resp.text}")
-        raise RuntimeError(f"Mercado Pago error {resp.status_code}: {resp.text}")
-
-    data = resp.json()
-    log.info(f"[MP] Suscripcion creada: {data.get('id')} para usuario {username} plan {plan}")
-    return {
-        "init_point":    data["init_point"],
-        "preapproval_id": data["id"],
-    }
+    log.info(f"[MP] init_point generado para usuario_id={usuario_id} plan={plan}")
+    return {"init_point": init_point}
 
 
 def cancelar_suscripcion(preapproval_id: str) -> bool:
@@ -109,7 +95,7 @@ def cancelar_suscripcion(preapproval_id: str) -> bool:
 
 
 def obtener_suscripcion(preapproval_id: str) -> dict:
-    """Consulta el estado de una suscripción en MP."""
+    """Consulta el estado de una suscripción de usuario en MP."""
     resp = requests.get(
         f"{MP_API}/preapproval/{preapproval_id}",
         headers=_headers(),
@@ -122,9 +108,7 @@ def obtener_suscripcion(preapproval_id: str) -> dict:
 def validar_firma_webhook(x_signature: str, x_request_id: str, data_id: str) -> bool:
     """
     Verifica la firma HMAC-SHA256 que MP envía en el header x-signature.
-    Retorna True si la firma es válida.
-
-    Formato esperado del header: "ts=....,v1=...."
+    Formato del header: "ts=...,v1=..."
     """
     if not MP_WEBHOOK_SECRET:
         log.warning("[MP] MP_WEBHOOK_SECRET no configurado — firma NO verificada.")
@@ -132,8 +116,8 @@ def validar_firma_webhook(x_signature: str, x_request_id: str, data_id: str) -> 
 
     try:
         parts = dict(p.split("=", 1) for p in x_signature.split(","))
-        ts   = parts.get("ts", "")
-        v1   = parts.get("v1", "")
+        ts = parts.get("ts", "")
+        v1 = parts.get("v1", "")
         template = f"id:{data_id};request-id:{x_request_id};ts:{ts};"
         digest = hmac.new(MP_WEBHOOK_SECRET.encode(), template.encode(), hashlib.sha256).hexdigest()
         return hmac.compare_digest(digest, v1)

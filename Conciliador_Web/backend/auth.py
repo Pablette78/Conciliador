@@ -461,7 +461,7 @@ async def eliminar_usuario(username: str, admin: dict = Depends(require_admin)):
 # --- Verificacion de Email ---
 @router.get("/verificar")
 async def verificar_email(token: str):
-    from payments import crear_suscripcion, PLAN_PRECIOS
+    from payments import get_init_point, PLAN_PRECIOS
     from fastapi.responses import RedirectResponse
 
     with get_db() as conn:
@@ -497,20 +497,10 @@ async def verificar_email(token: str):
         </div></body></html>
         """)
 
-    # Plan pago → crear suscripción MP y redirigir al checkout
-    email_usuario = dict(row).get("email") or ""
+    # Plan pago → redirigir al checkout del plan MP
     try:
-        result = crear_suscripcion(row["id"], row["username"], email_usuario, plan_pendiente)
+        result = get_init_point(row["id"], plan_pendiente)
         init_point = result["init_point"]
-        preapproval_id = result["preapproval_id"]
-
-        # Guardar preapproval_id en la DB
-        with get_db() as conn2:
-            cur2 = _cursor(conn2)
-            cur2.execute(
-                f"UPDATE usuarios SET mp_preapproval_id={PL} WHERE id={PL}",
-                (preapproval_id, row["id"])
-            )
 
         # Redirigir directo al checkout de MP
         return RedirectResponse(url=init_point, status_code=302)
@@ -604,27 +594,23 @@ async def iniciar_suscripcion(plan: str, usuario: dict = Depends(get_usuario_act
     Crea una suscripción recurrente en MP para el plan solicitado.
     Devuelve { init_point, preapproval_id } para redirigir al usuario al checkout.
     """
-    from payments import crear_suscripcion, PLAN_PRECIOS
+    from payments import get_init_point, PLAN_PRECIOS
     if plan not in PLAN_PRECIOS:
         raise HTTPException(status_code=400, detail=f"Plan '{plan}' no válido para suscripción.")
     if plan == usuario.get("plan"):
         raise HTTPException(status_code=400, detail="Ya tenés este plan activo.")
 
-    email = usuario.get("email") or ""
-    if not email:
-        raise HTTPException(status_code=400, detail="Necesitás tener un email registrado para suscribirte.")
-
     try:
-        result = crear_suscripcion(usuario["id"], usuario["username"], email, plan)
-    except (ValueError, RuntimeError) as e:
+        result = get_init_point(usuario["id"], plan)
+    except ValueError as e:
         raise HTTPException(status_code=502, detail=str(e))
 
-    # Guardar preapproval_id pendiente en la DB
+    # Marcar plan como pendiente mientras el usuario completa el pago
     with get_db() as conn:
         cur = _cursor(conn)
         cur.execute(
-            f"UPDATE usuarios SET plan_pendiente={PL}, mp_preapproval_id={PL} WHERE id={PL}",
-            (plan, result["preapproval_id"], usuario["id"])
+            f"UPDATE usuarios SET plan_pendiente={PL} WHERE id={PL}",
+            (plan, usuario["id"])
         )
 
     return result
