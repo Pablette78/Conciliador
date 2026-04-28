@@ -71,7 +71,6 @@ def crear_suscripcion(usuario_id: int, username: str, email: str, plan: str) -> 
             "currency_id": "ARS",
         },
         "back_url": f"{FRONTEND_URL}/planes?suscripcion=ok",
-        "payer_email": email,
         "external_reference": f"{usuario_id}:{plan}",
         "status": "pending",
     }
