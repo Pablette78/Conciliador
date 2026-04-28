@@ -3,7 +3,7 @@ import logging
 import requests
 
 BREVO_API_KEY  = os.getenv("BREVO_API_KEY", "")
-SENDER_EMAIL   = os.getenv("SMTP_USER", "soporte@contaflex.ar")
+SENDER_EMAIL   = os.getenv("SENDER_EMAIL", "soporte@contaflex.ar")
 SENDER_NAME    = "ContaFlex"
 ADMIN_EMAIL    = os.getenv("ADMIN_EMAIL", "pablo.ponti@gmail.com")
 BASE_URL       = os.getenv("FRONTEND_URL", "https://contaflex.ar")
