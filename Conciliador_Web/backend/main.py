@@ -290,22 +290,35 @@ async def webhook_mp(
         logger.error(f"[MP Webhook] Error consultando suscripcion {data_id}: {e}")
         raise HTTPException(status_code=502, detail="No se pudo consultar la suscripción en MP.")
 
-    estado       = sub.get("status")           # authorized | paused | cancelled | pending
-    external_ref = sub.get("external_reference", "")   # "usuario_id:plan"
+    estado         = sub.get("status")        # authorized | paused | cancelled | pending
     preapproval_id = sub.get("id", data_id)
+    payer_email    = (sub.get("payer") or {}).get("email", "")
+    plan_id_mp     = sub.get("preapproval_plan_id", "")
 
-    logger.info(f"[MP Webhook] preapproval_id={preapproval_id} estado={estado} ref={external_ref}")
+    logger.info(f"[MP Webhook] preapproval_id={preapproval_id} estado={estado} payer={payer_email} plan_id={plan_id_mp}")
 
-    # Parsear external_reference "usuario_id:plan"
-    try:
-        uid_str, plan = external_ref.split(":", 1)
-        usuario_id = int(uid_str)
-    except (ValueError, AttributeError):
-        logger.error(f"[MP Webhook] external_reference mal formado: {external_ref}")
+    # Identificar el plan por el plan_id de MP
+    from payments import PLAN_IDS
+    plan = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
+    if not plan:
+        logger.error(f"[MP Webhook] No se reconoce plan_id={plan_id_mp}")
+        return {"ok": True, "skipped": True}
+
+    # Identificar al usuario por email (el email que usó en MP debe coincidir con el de ContaFlex)
+    if not payer_email:
+        logger.error(f"[MP Webhook] Sin payer_email en la suscripción {preapproval_id}")
         return {"ok": True, "skipped": True}
 
     with get_db() as conn:
         cur = _cursor(conn)
+
+        # Buscar usuario por email o por plan_pendiente + mp_preapproval_id
+        cur.execute(f"SELECT id FROM usuarios WHERE email={PL}", (payer_email,))
+        row = cur.fetchone()
+        if not row:
+            logger.error(f"[MP Webhook] No se encontró usuario con email={payer_email}")
+            return {"ok": True, "skipped": True}
+        usuario_id = row["id"] if isinstance(row, dict) else row[0]
 
         if estado == "authorized":
             # Pago confirmado → activar plan
@@ -315,7 +328,7 @@ async def webhook_mp(
                 f"plan_pendiente=NULL, mp_preapproval_id={PL} WHERE id={PL}",
                 (plan, nuevo_limite, preapproval_id, usuario_id)
             )
-            logger.info(f"[MP Webhook] Plan {plan} activado para usuario_id={usuario_id}")
+            logger.info(f"[MP Webhook] Plan {plan} activado para usuario_id={usuario_id} ({payer_email})")
 
         elif estado in ("cancelled", "paused"):
             # Pago fallido o cancelado → bajar a Free

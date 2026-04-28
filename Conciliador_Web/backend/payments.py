@@ -55,11 +55,12 @@ def _headers(idempotency_key: str = "") -> dict:
 
 def get_init_point(usuario_id: int, plan: str) -> dict:
     """
-    Devuelve el init_point del plan MP para redirigir al usuario al checkout.
+    Consulta el init_point real del plan en MP y lo devuelve.
     Usa preapproval_plan — el plan ya existe en MP, no se crea por usuario.
 
     Retorna: { "init_point": str }
     Lanza ValueError si el plan no tiene ID configurado.
+    Lanza RuntimeError si MP no responde.
     """
     plan_id = PLAN_IDS.get(plan, "")
     if not plan_id:
@@ -68,15 +69,22 @@ def get_init_point(usuario_id: int, plan: str) -> dict:
             f"Creá el plan en MP y configurá la variable de entorno."
         )
 
-    # El init_point del plan ya incluye el link de checkout.
-    # Agregamos external_reference como query param para identificar al usuario en el webhook.
-    init_point = (
-        f"https://www.mercadopago.com.ar/subscriptions/checkout"
-        f"?preapproval_plan_id={plan_id}"
-        f"&external_reference={usuario_id}:{plan}"
+    # Consultar el plan a MP para obtener el init_point real
+    resp = requests.get(
+        f"{MP_API}/preapproval_plan/{plan_id}",
+        headers=_headers(),
+        timeout=15,
     )
+    if resp.status_code != 200:
+        log.error(f"[MP] Error consultando plan {plan_id}: {resp.status_code} {resp.text}")
+        raise RuntimeError(f"Mercado Pago error {resp.status_code}: {resp.text}")
 
-    log.info(f"[MP] init_point generado para usuario_id={usuario_id} plan={plan}")
+    data = resp.json()
+    init_point = data.get("init_point")
+    if not init_point:
+        raise RuntimeError(f"MP no devolvió init_point para el plan {plan_id}")
+
+    log.info(f"[MP] init_point obtenido para usuario_id={usuario_id} plan={plan}: {init_point}")
     return {"init_point": init_point}
 
 
