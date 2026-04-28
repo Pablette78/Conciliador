@@ -635,6 +635,40 @@ async def cancelar_suscripcion_usuario(usuario: dict = Depends(get_usuario_actua
     return {"ok": True, "message": "Suscripción cancelada. Tu plan volvió a Free."}
 
 
+# --- Callback de Mercado Pago (retorno del checkout) ---
+@router.get("/mp-return/{usuario_id}/{plan}")
+async def mp_return(usuario_id: int, plan: str):
+    """
+    MP redirige aquí después de que el usuario completa (o cancela) el pago.
+    Verificamos si tiene una suscripción activa en MP y activamos el plan.
+    """
+    from payments import buscar_suscripcion_activa, PLAN_IDS, PLAN_PRECIOS
+    from fastapi.responses import RedirectResponse
+
+    if plan not in PLAN_PRECIOS:
+        return RedirectResponse(url=f"{FRONTEND_URL}?mp=error")
+
+    plan_id = PLAN_IDS.get(plan, "")
+
+    # Buscar suscripción activa en MP para este plan
+    sub = buscar_suscripcion_activa(plan_id)
+
+    if sub and sub.get("status") == "authorized":
+        preapproval_id = sub.get("id")
+        nuevo_limite = PLAN_LIMITS.get(plan, 5)
+        with get_db() as conn:
+            cur = _cursor(conn)
+            cur.execute(
+                f"UPDATE usuarios SET plan={PL}, limite_mensual={PL}, activo=1, "
+                f"plan_pendiente=NULL, mp_preapproval_id={PL} WHERE id={PL}",
+                (plan, nuevo_limite, preapproval_id, usuario_id)
+            )
+        return RedirectResponse(url=f"{FRONTEND_URL}?mp=ok&plan={plan}")
+
+    # No encontró suscripción activa — redirigir con estado pendiente
+    return RedirectResponse(url=f"{FRONTEND_URL}?mp=pending")
+
+
 # --- Recuperacion de contrasena ---
 @router.post("/olvide-password")
 async def solicitar_reset(username: str):
