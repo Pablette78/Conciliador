@@ -28,6 +28,7 @@ SH_BANCO = "1. Auditoría Banco"
 SH_SIST  = "2. Auditoría Sistema"
 SH_IMP   = "3. Detalle Impuestos"
 SH_CONC  = "4. Conciliación"
+SH_AGRUP = "5. Agrupación"
 
 def _h(ws, r, headers, start_col=1):
     for i, h in enumerate(headers):
@@ -92,7 +93,7 @@ def _crear_detalle_impuestos(wb, resultado, mes_anio):
             ws.cell(row=r, column=1, value=m.fecha).number_format = DTF; ws.cell(row=r, column=2, value=m.concepto)
             ws.cell(row=r, column=4, value=m.debito or m.credito).number_format = MF; _sf(ws, r, 4, DF); r += 1
         ws.cell(row=r, column=3, value='SUBTOTAL'); ws.cell(row=r, column=4, value=f'=SUM(D{start}:D{r-1})').number_format = MF; rows_sub.append(r); r += 2
-    ws.cell(row=r, column=1, value='TOTAL GENERAL'); ws.cell(row=r, column=4, value='+'.join(f'D{s}' for s in rows_sub) if rows_sub else '0').number_format = MF
+    ws.cell(row=r, column=1, value='TOTAL GENERAL'); ws.cell(row=r, column=4, value=('=' + '+'.join(f'D{s}' for s in rows_sub)) if rows_sub else 0).number_format = MF
     row_tot = r
     for col, w in [('A', 14), ('B', 40), ('C', 30), ('D', 15)]: ws.column_dimensions[col].width = w
     return {'row_gran_total': row_tot}
@@ -184,11 +185,65 @@ def _llenar_resumen_clean(ws, resultado, datos_banco, mes_anio, rb, rs, ri, rc):
         ws.cell(row=r_g, column=1, value=c.replace('_',' ')).border = BD; ws.cell(row=r_g, column=2, value=d['total']).number_format = MF; ws.cell(row=r_g, column=2).border = BD; r_g += 1
     ws.column_dimensions['A'].width = 38; ws.column_dimensions['B'].width = 18; ws.column_dimensions['D'].width = 15; ws.column_dimensions['E'].width = 18; ws.column_dimensions['F'].width = 18; ws.column_dimensions['G'].width = 12
 
+def _crear_agrupacion(wb, resultado, datos_banco, mes_anio):
+    ws = wb.create_sheet(SH_AGRUP)
+    ws['A1'] = f'AGRUPACIÓN POR TIPO - {mes_anio}'; ws['A1'].font = Font(bold=True, size=14)
+
+    # Agrupar TODOS los movimientos del banco por tipo
+    from collections import defaultdict
+    grupos = defaultdict(lambda: {'debito': 0.0, 'credito': 0.0, 'items': []})
+    for m in datos_banco.movimientos:
+        grupos[m.tipo or 'OTRO']['debito'] += m.debito
+        grupos[m.tipo or 'OTRO']['credito'] += m.credito
+        grupos[m.tipo or 'OTRO']['items'].append(m)
+
+    r = 3
+    _h(ws, r, ['Tipo', 'Cantidad', 'Total Débito', 'Total Crédito', 'Neto']); r += 1
+    row_start = r
+    for tipo in sorted(grupos.keys()):
+        g = grupos[tipo]
+        ws.cell(row=r, column=1, value=tipo.replace('_', ' ')).border = BD
+        ws.cell(row=r, column=2, value=len(g['items'])).border = BD
+        ws.cell(row=r, column=3, value=g['debito']).number_format = MF; ws.cell(row=r, column=3).border = BD
+        ws.cell(row=r, column=4, value=g['credito']).number_format = MF; ws.cell(row=r, column=4).border = BD
+        ws.cell(row=r, column=5, value=round(g['credito'] - g['debito'], 2)).number_format = MF; ws.cell(row=r, column=5).border = BD
+        _sf(ws, r, 5, DF); r += 1
+    row_end = r - 1
+
+    # Fila de totales
+    _sf(ws, r, 5, TF, AZUL_CLARO)
+    ws.cell(row=r, column=1, value='TOTAL').font = TF; ws.cell(row=r, column=1).border = BD
+    ws.cell(row=r, column=2, value=f'=SUM(B{row_start}:B{row_end})').border = BD
+    ws.cell(row=r, column=3, value=f'=SUM(C{row_start}:C{row_end})').number_format = MF; ws.cell(row=r, column=3).border = BD
+    ws.cell(row=r, column=4, value=f'=SUM(D{row_start}:D{row_end})').number_format = MF; ws.cell(row=r, column=4).border = BD
+    ws.cell(row=r, column=5, value=f'=SUM(E{row_start}:E{row_end})').number_format = MF; ws.cell(row=r, column=5).border = BD
+    r += 3
+
+    # Detalle por tipo
+    ws.cell(row=r, column=1, value='DETALLE POR TIPO').font = TF; r += 1
+    for tipo in sorted(grupos.keys()):
+        g = grupos[tipo]
+        cl = ws.cell(row=r, column=1, value=tipo.replace('_', ' ')); cl.font = TFW; cl.fill = AZUL_HEADER
+        ws.merge_cells(start_row=r, start_column=1, end_row=r, end_column=5); r += 1
+        _h(ws, r, ['Fecha', 'Concepto', 'Tipo', 'Débito', 'Crédito']); r += 1
+        for m in sorted(g['items'], key=lambda x: x.fecha):
+            ws.cell(row=r, column=1, value=m.fecha).number_format = DTF
+            ws.cell(row=r, column=2, value=m.concepto)
+            ws.cell(row=r, column=3, value=m.tipo or '')
+            if m.debito: ws.cell(row=r, column=4, value=m.debito).number_format = MF
+            if m.credito: ws.cell(row=r, column=5, value=m.credito).number_format = MF
+            _sf(ws, r, 5, DF); r += 1
+        r += 1
+
+    for col, w in [('A', 25), ('B', 40), ('C', 20), ('D', 15), ('E', 15)]:
+        ws.column_dimensions[col].width = w
+
 def generar_excel(resultado, datos_banco, ruta_salida, mes_anio="", movs_sist=None):
     wb = Workbook(); ws_res = wb.active
     rb = _crear_auditoria_banco(wb, datos_banco, mes_anio)
     rs = _crear_auditoria_sistema(wb, movs_sist, mes_anio) if movs_sist else {}
     ri = _crear_detalle_impuestos(wb, resultado, mes_anio)
     rc = _crear_conciliacion(wb, resultado, mes_anio)
+    _crear_agrupacion(wb, resultado, datos_banco, mes_anio)
     _llenar_resumen_clean(ws_res, resultado, datos_banco, mes_anio, rb, rs, ri, rc)
     wb.save(ruta_salida); return ruta_salida

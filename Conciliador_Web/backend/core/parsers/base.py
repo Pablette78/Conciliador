@@ -13,15 +13,16 @@ class BaseParser(ABC):
         c = concepto.lower()
         if 'sircreb' in c: return 'RET_SIRCREB'
         if 'iibb tuc' in c or 'adelanto iibb' in c: return 'RET_IIBB_TUCUMAN'
-        if 'ingresos brutos' in c or 'ing. brutos' in c: return 'PERC_IIBB'
+        if 'iibb' in c and 'caba' in c: return 'PERC_IIBB_CABA'
         if 'percepcion ingresos brutos caba' in c: return 'PERC_IIBB_CABA'
-        
+        if 'ingresos brutos' in c or 'ing. brutos' in c or 'iibb' in c: return 'PERC_IIBB'
+
         if 'ley 25413' in c or 'ley 25.413' in c:
             if 'cred' in c or 'cre.' in c: return 'LEY25413_CREDITO'
             if 'deb' in c or 'deb.' in c: return 'LEY25413_DEBITO'
             return 'LEY25413'
-            
-        if 'iva' in c and ('percepcion' in c or '21%' in c): return 'IVA'
+
+        if 'iva' in c: return 'IVA'
         if 'comision' in c or 'com transf' in c or 'com.' in c: return 'COMISION'
         if 'pago de haberes' in c or 'honorarios' in c: return 'HABERES'
         if 'debito automatico' in c: return 'DEB_AUTOMATICO'
