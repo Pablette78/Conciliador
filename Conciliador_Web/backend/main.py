@@ -16,7 +16,7 @@ from auth import init_db, get_usuario_actual, require_admin, get_db, PL, router 
 
 logger = get_logger("conciliador.main")
 
-from core.models import Movimiento
+from core.models import Movimiento, DatosExtracto
 from core.factory import FabricaParsers
 from core.engine import MotorConciliacion
 from core.utils import combinar_extractos, combinar_mayores
@@ -163,7 +163,8 @@ async def conciliar(
             # Extracto Excel genérico: usar el mismo parser que los mayores
             banco_final = banco if banco != "— auto —" else "Excel"
             for ruta in ruta_extractos:
-                lista_datos.append(parsear_excel(ruta))
+                movs = parsear_excel(ruta)
+                lista_datos.append(DatosExtracto(banco=banco_final, titular="", movimientos=movs))
             logger.info(f"Extracto Excel genérico detectado — banco: {banco_final}")
         else:
             # Detectar banco desde PDF
