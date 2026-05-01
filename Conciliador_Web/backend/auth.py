@@ -497,12 +497,21 @@ async def verificar_email(token: str):
         </div></body></html>
         """)
 
-    # Plan pago → redirigir al checkout del plan MP
+    # Plan pago → crear preapproval y redirigir al checkout MP
     try:
-        result = get_init_point(row["id"], plan_pendiente)
-        init_point = result["init_point"]
+        result         = get_init_point(row["id"], plan_pendiente)
+        init_point     = result["init_point"]
+        preapproval_id = result.get("preapproval_id")
 
-        # Redirigir directo al checkout de MP
+        # Guardar preapproval_id pending para que el webhook pueda identificar al usuario
+        if preapproval_id:
+            with get_db() as conn2:
+                cur2 = _cursor(conn2)
+                cur2.execute(
+                    f"UPDATE usuarios SET mp_preapproval_id={PL}, plan_pendiente={PL} WHERE id={PL}",
+                    (preapproval_id, plan_pendiente, row["id"]),
+                )
+
         return RedirectResponse(url=init_point, status_code=302)
 
     except Exception as e:
@@ -584,86 +593,6 @@ async def aprobar_suscripcion(token: str):
       <p>Se le envio un email de confirmacion a {email_dest}.</p>
     </div></body></html>
     """)
-
-
-# --- Suscripciones Mercado Pago ---
-
-@router.post("/subscribe")
-async def iniciar_suscripcion(plan: str, usuario: dict = Depends(get_usuario_actual)):
-    """
-    Crea una suscripción recurrente en MP para el plan solicitado.
-    Devuelve { init_point, preapproval_id } para redirigir al usuario al checkout.
-    """
-    from payments import get_init_point, PLAN_PRECIOS
-    if plan not in PLAN_PRECIOS:
-        raise HTTPException(status_code=400, detail=f"Plan '{plan}' no válido para suscripción.")
-    if plan == usuario.get("plan"):
-        raise HTTPException(status_code=400, detail="Ya tenés este plan activo.")
-
-    try:
-        result = get_init_point(usuario["id"], plan)
-    except ValueError as e:
-        raise HTTPException(status_code=502, detail=str(e))
-
-    # Marcar plan como pendiente mientras el usuario completa el pago
-    with get_db() as conn:
-        cur = _cursor(conn)
-        cur.execute(
-            f"UPDATE usuarios SET plan_pendiente={PL} WHERE id={PL}",
-            (plan, usuario["id"])
-        )
-
-    return result
-
-
-@router.post("/cancel-subscription")
-async def cancelar_suscripcion_usuario(usuario: dict = Depends(get_usuario_actual)):
-    """Cancela la suscripción activa del usuario en MP y lo baja a Free."""
-    from payments import cancelar_suscripcion
-    preapproval_id = usuario.get("mp_preapproval_id")
-    if not preapproval_id:
-        raise HTTPException(status_code=400, detail="No tenés una suscripción activa en MP.")
-
-    cancelar_suscripcion(preapproval_id)
-
-    with get_db() as conn:
-        cur = _cursor(conn)
-        cur.execute(
-            f"UPDATE usuarios SET plan='Free', limite_mensual=5, mp_preapproval_id=NULL, plan_pendiente=NULL WHERE id={PL}",
-            (usuario["id"],)
-        )
-    return {"ok": True, "message": "Suscripción cancelada. Tu plan volvió a Free."}
-
-
-# --- Confirmación de pago Mercado Pago ---
-@router.post("/mp-confirm")
-async def mp_confirm(preapproval_id: str, usuario: dict = Depends(get_usuario_actual)):
-    """
-    El frontend llama a este endpoint cuando MP redirige de vuelta con ?preapproval_id=XXX.
-    Verificamos el pago con MP y activamos el plan del usuario autenticado.
-    """
-    from payments import verificar_preapproval, PLAN_IDS
-
-    sub = verificar_preapproval(preapproval_id)
-    if not sub:
-        raise HTTPException(status_code=400, detail="La suscripción no está activa en Mercado Pago.")
-
-    # Determinar el plan según preapproval_plan_id
-    plan_id_mp = sub.get("preapproval_plan_id", "")
-    plan = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
-    if not plan:
-        raise HTTPException(status_code=400, detail="No se reconoce el plan de la suscripción.")
-
-    nuevo_limite = PLAN_LIMITS.get(plan, 5)
-    with get_db() as conn:
-        cur = _cursor(conn)
-        cur.execute(
-            f"UPDATE usuarios SET plan={PL}, limite_mensual={PL}, activo=1, "
-            f"plan_pendiente=NULL, mp_preapproval_id={PL} WHERE id={PL}",
-            (plan, nuevo_limite, preapproval_id, usuario["id"])
-        )
-
-    return {"ok": True, "plan": plan}
 
 
 # --- Recuperacion de contrasena ---
