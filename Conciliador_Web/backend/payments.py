@@ -67,10 +67,11 @@ def _headers(idempotency_key: str = "") -> dict:
 
 def get_init_point(usuario_id: int, plan: str) -> dict:
     """
-    Crea un preapproval POR USUARIO en MP y devuelve su init_point único.
-    Usa external_reference=str(usuario_id) para identificar al usuario en el webhook.
+    Obtiene el init_point del plan MP para redirigir al usuario al checkout.
+    El usuario ingresa su tarjeta directamente en el checkout de MP.
+    MP redirige al back_url con ?preapproval_id=XXX al finalizar.
 
-    Retorna: { "init_point": str, "preapproval_id": str }
+    Retorna: { "init_point": str }
     Lanza ValueError si el plan no tiene MP_PLAN_ID configurado.
     Lanza RuntimeError si MP devuelve un error.
     """
@@ -81,32 +82,22 @@ def get_init_point(usuario_id: int, plan: str) -> dict:
             "Creá el plan en MP y configurá la variable de entorno."
         )
 
-    payload = {
-        "preapproval_plan_id": plan_id,
-        "external_reference":  str(usuario_id),
-        "back_url":            FRONTEND_URL,
-    }
-    resp = requests.post(
-        f"{MP_API}/preapproval",
-        json=payload,
-        headers=_headers(idempotency_key=f"sub-{usuario_id}-{plan}"),
+    resp = requests.get(
+        f"{MP_API}/preapproval_plan/{plan_id}",
+        headers=_headers(),
         timeout=15,
     )
-    if resp.status_code not in (200, 201):
-        log.error(f"[MP] Error creando preapproval usuario_id={usuario_id} plan={plan}: "
-                  f"{resp.status_code} {resp.text}")
+    if resp.status_code != 200:
+        log.error(f"[MP] Error consultando plan {plan_id}: {resp.status_code} {resp.text}")
         raise RuntimeError(f"Mercado Pago respondió {resp.status_code}: {resp.text}")
 
-    data          = resp.json()
-    init_point    = data.get("init_point")
-    preapproval_id = data.get("id")
+    data       = resp.json()
+    init_point = data.get("init_point")
+    if not init_point:
+        raise RuntimeError(f"MP no devolvió init_point para el plan {plan_id}")
 
-    if not init_point or not preapproval_id:
-        raise RuntimeError(f"MP no devolvió init_point/id para usuario_id={usuario_id} plan={plan}")
-
-    log.info(f"[MP] Preapproval creado: usuario_id={usuario_id} plan={plan} "
-             f"preapproval_id={preapproval_id}")
-    return {"init_point": init_point, "preapproval_id": preapproval_id}
+    log.info(f"[MP] init_point obtenido para usuario_id={usuario_id} plan={plan}")
+    return {"init_point": init_point}
 
 
 def verificar_preapproval(preapproval_id: str) -> dict | None:
@@ -221,8 +212,8 @@ async def iniciar_suscripcion(plan: str, usuario: dict = Depends(get_usuario_act
     with get_db() as conn:
         cur = _cursor(conn)
         cur.execute(
-            f"UPDATE usuarios SET plan_pendiente={PL}, mp_preapproval_id={PL} WHERE id={PL}",
-            (plan, result["preapproval_id"], usuario["id"]),
+            f"UPDATE usuarios SET plan_pendiente={PL} WHERE id={PL}",
+            (plan, usuario["id"]),
         )
 
     return result

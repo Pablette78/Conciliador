@@ -458,6 +458,36 @@ async def eliminar_usuario(username: str, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 
+@router.post("/usuarios/{username}/reset-test", dependencies=[Depends(require_admin)])
+async def reset_usuario_para_test(username: str, plan: str = "Individual"):
+    """
+    Resetea un usuario a estado pre-verificación para poder repetir el flujo
+    de registro → email → MP sin borrarlo ni crear uno nuevo.
+    Solo accesible por admin.
+    """
+    nuevo_token = str(uuid.uuid4())
+    with get_db() as conn:
+        cur = _cursor(conn)
+        cur.execute(f"SELECT id FROM usuarios WHERE username={PL}", (username,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+        cur.execute(
+            f"UPDATE usuarios SET "
+            f"activo=0, email_verificado=0, verificacion_token={PL}, "
+            f"plan='Free', limite_mensual=5, plan_pendiente={PL}, "
+            f"mp_preapproval_id=NULL, token_aprobacion_suscripcion=NULL "
+            f"WHERE username={PL}",
+            (nuevo_token, plan, username),
+        )
+    return {
+        "ok": True,
+        "username": username,
+        "plan_pendiente": plan,
+        "verificacion_url": f"/auth/verificar?token={nuevo_token}",
+        "token": nuevo_token,
+    }
+
+
 # --- Verificacion de Email ---
 @router.get("/verificar")
 async def verificar_email(token: str):
@@ -497,20 +527,10 @@ async def verificar_email(token: str):
         </div></body></html>
         """)
 
-    # Plan pago → crear preapproval y redirigir al checkout MP
+    # Plan pago → redirigir al checkout del plan MP
     try:
-        result         = get_init_point(row["id"], plan_pendiente)
-        init_point     = result["init_point"]
-        preapproval_id = result.get("preapproval_id")
-
-        # Guardar preapproval_id pending para que el webhook pueda identificar al usuario
-        if preapproval_id:
-            with get_db() as conn2:
-                cur2 = _cursor(conn2)
-                cur2.execute(
-                    f"UPDATE usuarios SET mp_preapproval_id={PL}, plan_pendiente={PL} WHERE id={PL}",
-                    (preapproval_id, plan_pendiente, row["id"]),
-                )
+        result     = get_init_point(row["id"], plan_pendiente)
+        init_point = result["init_point"]
 
         return RedirectResponse(url=init_point, status_code=302)
 
