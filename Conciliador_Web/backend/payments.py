@@ -189,13 +189,19 @@ def cancelar_suscripcion(preapproval_id: str) -> bool:
     return ok
 
 
-def obtener_suscripcion(preapproval_id: str) -> dict:
-    """Consulta el estado completo de un preapproval en MP. Lanza si falla."""
+def obtener_suscripcion(preapproval_id: str) -> dict | None:
+    """
+    Consulta el estado completo de un preapproval en MP.
+    Retorna None si el ID no existe (404). Lanza si hay otro error.
+    """
     resp = requests.get(
         f"{MP_API}/preapproval/{preapproval_id}",
         headers=_headers(),
         timeout=15,
     )
+    if resp.status_code == 404:
+        log.warning(f"[MP] preapproval {preapproval_id} no encontrado en MP (404).")
+        return None
     resp.raise_for_status()
     return resp.json()
 
@@ -355,8 +361,13 @@ async def webhook_mp(
         sub = obtener_suscripcion(data_id)
     except Exception as e:
         log.error(f"[MP Webhook] Error consultando suscripcion {data_id}: {e}")
-        raise HTTPException(status_code=502,
-                            detail="No se pudo consultar la suscripción en MP.")
+        # Devolver 200 para que MP no reintente indefinidamente
+        return {"ok": True, "skipped": True}
+
+    if not sub:
+        # ID no encontrado en MP (ej: evento de prueba con ID ficticio)
+        log.info(f"[MP Webhook] preapproval {data_id} no existe en MP — ignorado.")
+        return {"ok": True, "skipped": True}
 
     estado         = sub.get("status")
     preapproval_id = sub.get("id", data_id)
