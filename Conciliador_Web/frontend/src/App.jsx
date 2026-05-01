@@ -165,11 +165,6 @@ export default function App() {
     if (validos.length) setMayores(p => [...p, ...validos])
   }
 
-  const extractoEsExcel = extractos.length > 0 && extractos.every(f => {
-    const ext = '.' + f.name.split('.').pop().toLowerCase()
-    return ext === '.xlsx' || ext === '.xls'
-  })
-
   const handleConciliar = async () => {
     if (!extractos.length || !mayores.length) {
       setError("Cargá al menos un extracto (PDF o Excel) y un mayor (Excel).")
@@ -344,7 +339,8 @@ export default function App() {
               banco={banco} setBanco={setBanco}
               extractos={extractos} setExtractos={setExtractos}
               mayores={mayores} setMayores={setMayores}
-              agregarArchivos={agregarArchivos}
+              agregarExtractos={agregarExtractos}
+              agregarMayores={agregarMayores}
               loading={loading} downloading={downloading}
               resultado={resultado} error={error}
               tableTab={tableTab} setTableTab={setTableTab}
@@ -370,9 +366,13 @@ export default function App() {
 // ============================================================
 function Dashboard({
   banco, setBanco, extractos, setExtractos, mayores, setMayores,
-  agregarArchivos, loading, downloading, resultado, error,
+  agregarExtractos, agregarMayores, loading, downloading, resultado, error,
   tableTab, setTableTab, tableData, pieData, onConciliar, onDownload
 }) {
+  const extractoEsExcel = extractos.length > 0 && extractos.every(f => {
+    const ext = '.' + f.name.split('.').pop().toLowerCase()
+    return ext === '.xlsx' || ext === '.xls'
+  })
   return (
     <>
       <div>
