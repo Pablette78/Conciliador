@@ -51,6 +51,59 @@ MP_API = "https://api.mercadopago.com"
 payments_router = APIRouter(tags=["Pagos"])
 
 
+async def _handle_authorized_payment(invoice_id: str) -> dict:
+    """
+    Maneja subscription_authorized_payment: cobro mensual de una suscripción.
+    Consulta el pago a MP, obtiene el preapproval_id y confirma que el plan
+    sigue activo en DB. Si el pago fue rechazado, baja el usuario a Free.
+    """
+    if not invoice_id:
+        return {"ok": True, "skipped": True}
+
+    try:
+        resp = requests.get(
+            f"{MP_API}/authorized_payments/{invoice_id}",
+            headers=_headers(),
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log.error(f"[MP Webhook] Error consultando authorized_payment {invoice_id}: "
+                      f"{resp.status_code}")
+            return {"ok": True, "skipped": True}
+        pago = resp.json()
+    except Exception as e:
+        log.error(f"[MP Webhook] Error consultando authorized_payment {invoice_id}: {e}")
+        return {"ok": True, "skipped": True}
+
+    preapproval_id = pago.get("preapproval_id", "")
+    status         = pago.get("status", "")
+
+    log.info(f"[MP Webhook] authorized_payment invoice_id={invoice_id} "
+             f"preapproval_id={preapproval_id} status={status}")
+
+    if not preapproval_id:
+        return {"ok": True, "skipped": True}
+
+    with get_db() as conn:
+        cur = _cursor(conn)
+        cur.execute(f"SELECT id, plan FROM usuarios WHERE mp_preapproval_id={PL}",
+                    (preapproval_id,))
+        row = cur.fetchone()
+        if not row:
+            log.warning(f"[MP Webhook] authorized_payment: no se encontró usuario "
+                        f"con preapproval_id={preapproval_id}")
+            return {"ok": True, "skipped": True}
+
+        usuario_id = row["id"] if isinstance(row, dict) else row[0]
+
+        if status == "authorized":
+            log.info(f"[MP Webhook] Cobro mensual OK para usuario_id={usuario_id}")
+        elif status in ("cancelled", "refunded", "charged_back"):
+            _bajar_a_free_en_db(cur, usuario_id, f"cobro mensual status={status}")
+
+    return {"ok": True}
+
+
 # ---------------------------------------------------------------------------
 # Funciones MP (puras, sin FastAPI)
 # ---------------------------------------------------------------------------
@@ -286,7 +339,13 @@ async def webhook_mp(
         log.warning(f"[MP Webhook] Firma inválida — descartado. data_id={data_id}")
         raise HTTPException(status_code=401, detail="Firma inválida.")
 
-    if body.get("type") != "subscription_preapproval":
+    tipo = body.get("type")
+
+    # subscription_authorized_payment: cobro mensual procesado
+    if tipo == "subscription_authorized_payment":
+        return await _handle_authorized_payment(data_id)
+
+    if tipo != "subscription_preapproval":
         return {"ok": True, "skipped": True}
 
     if not data_id:
