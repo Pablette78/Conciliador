@@ -151,26 +151,39 @@ async def conciliar(
             await _guardar_archivo(file, ruta)
             ruta_mayores.append(ruta)
 
-        # Detectar banco
-        banco_final = banco
-        if banco == "— auto —":
-            for r in ruta_extractos:
-                b_det, conf = detectar_banco_con_confianza(r)
-                if b_det:
-                    banco_final = b_det
-                    logger.info(f"Banco detectado: {banco_final} (confianza: {conf})")
-                    break
-            if banco_final == "— auto —":
-                raise HTTPException(status_code=400, detail="No se pudo detectar el banco automáticamente.")
+        # Determinar si los extractos son Excel genéricos
+        def _es_excel(ruta):
+            return ruta.lower().endswith(('.xlsx', '.xls'))
+
+        extractos_son_excel = all(_es_excel(r) for r in ruta_extractos)
 
         # Parsear extractos
         lista_datos = []
-        for ruta in ruta_extractos:
-            parser = FabricaParsers.obtener_parser(banco_final)
-            if not parser:
-                logger.warning(f"Sin parser para banco: {banco_final}")
-                continue
-            lista_datos.append(parser.parse(ruta))
+        if extractos_son_excel:
+            # Extracto Excel genérico: usar el mismo parser que los mayores
+            banco_final = banco if banco != "— auto —" else "Excel"
+            for ruta in ruta_extractos:
+                lista_datos.append(parsear_excel(ruta))
+            logger.info(f"Extracto Excel genérico detectado — banco: {banco_final}")
+        else:
+            # Detectar banco desde PDF
+            banco_final = banco
+            if banco == "— auto —":
+                for r in ruta_extractos:
+                    b_det, conf = detectar_banco_con_confianza(r)
+                    if b_det:
+                        banco_final = b_det
+                        logger.info(f"Banco detectado: {banco_final} (confianza: {conf})")
+                        break
+                if banco_final == "— auto —":
+                    raise HTTPException(status_code=400, detail="No se pudo detectar el banco automáticamente.")
+
+            for ruta in ruta_extractos:
+                parser = FabricaParsers.obtener_parser(banco_final)
+                if not parser:
+                    logger.warning(f"Sin parser para banco: {banco_final}")
+                    continue
+                lista_datos.append(parser.parse(ruta))
 
         if not lista_datos:
             raise HTTPException(status_code=400, detail=f"No se pudo parsear el extracto para '{banco_final}'.")

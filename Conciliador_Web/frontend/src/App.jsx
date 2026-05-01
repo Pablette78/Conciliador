@@ -139,23 +139,40 @@ export default function App() {
     setView('dashboard')
   }
 
-  const agregarArchivos = (files) => {
-    const errores = [], pdfs = [], excels = []
+  const agregarExtractos = (files) => {
+    const errores = [], validos = []
+    for (const f of files) {
+      const err = validarArchivo(f)
+      if (err) { errores.push(err); continue }
+      validos.push(f)
+    }
+    if (errores.length) setError(errores.join(' | '))
+    else setError(null)
+    if (validos.length) setExtractos(p => [...p, ...validos])
+  }
+
+  const agregarMayores = (files) => {
+    const errores = [], validos = []
     for (const f of files) {
       const err = validarArchivo(f)
       if (err) { errores.push(err); continue }
       const ext = '.' + f.name.split('.').pop().toLowerCase()
-      ext === '.pdf' ? pdfs.push(f) : excels.push(f)
+      if (ext === '.pdf') { errores.push(`"${f.name}": el mayor debe ser Excel (XLSX/XLS).`); continue }
+      validos.push(f)
     }
     if (errores.length) setError(errores.join(' | '))
     else setError(null)
-    if (pdfs.length) setExtractos(p => [...p, ...pdfs])
-    if (excels.length) setMayores(p => [...p, ...excels])
+    if (validos.length) setMayores(p => [...p, ...validos])
   }
+
+  const extractoEsExcel = extractos.length > 0 && extractos.every(f => {
+    const ext = '.' + f.name.split('.').pop().toLowerCase()
+    return ext === '.xlsx' || ext === '.xls'
+  })
 
   const handleConciliar = async () => {
     if (!extractos.length || !mayores.length) {
-      setError("Cargá al menos un extracto (PDF) y un mayor (Excel).")
+      setError("Cargá al menos un extracto (PDF o Excel) y un mayor (Excel).")
       return
     }
     setLoading(true); setError(null)
@@ -369,23 +386,27 @@ function Dashboard({
             <Upload size={16} className="text-brand-blue" /><span>Extractos Bancarios</span>
           </h3>
           <div
-            className="border-2 border-dashed border-brand-blue/20 rounded-2xl flex flex-col items-center justify-center p-8 hover:bg-brand-blue/5 transition-all min-h-[160px]"
+            className={`border-2 border-dashed rounded-2xl flex flex-col items-center justify-center p-8 transition-all min-h-[160px] ${extractoEsExcel ? 'border-emerald-500/30 hover:bg-emerald-500/5' : 'border-brand-blue/20 hover:bg-brand-blue/5'}`}
             onDragOver={e => e.preventDefault()}
             onDrop={e => {
               e.preventDefault()
-              agregarArchivos(e.dataTransfer.files)
+              agregarExtractos(e.dataTransfer.files)
             }}>
             {extractos.length > 0 && (
               <div className="mb-4 space-y-1.5 w-full">
-                {extractos.map((f, i) => <FileBadge key={`e${i}`} name={f.name} tag="PDF" color="blue" onRemove={() => setExtractos(p => p.filter((_, x) => x !== i))} />)}
+                {extractos.map((f, i) => {
+                  const ext = '.' + f.name.split('.').pop().toLowerCase()
+                  const esXls = ext === '.xlsx' || ext === '.xls'
+                  return <FileBadge key={`e${i}`} name={f.name} tag={esXls ? 'XLS' : 'PDF'} color={esXls ? 'green' : 'blue'} onRemove={() => setExtractos(p => p.filter((_, x) => x !== i))} />
+                })}
               </div>
             )}
             <input type="file" multiple id="file_extractos" accept=".pdf,.xlsx,.xls" className="hidden"
               onChange={e => {
-                agregarArchivos(e.target.files)
+                agregarExtractos(e.target.files)
                 e.target.value = ''
               }} />
-            <label htmlFor="file_extractos" className="bg-brand-blue text-white px-8 py-3 rounded-2xl font-black text-xs hover:bg-blue-600 cursor-pointer transition-all shadow-xl shadow-brand-blue/20">
+            <label htmlFor="file_extractos" className={`text-white px-8 py-3 rounded-2xl font-black text-xs cursor-pointer transition-all shadow-xl ${extractoEsExcel ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-500/20' : 'bg-brand-blue hover:bg-blue-600 shadow-brand-blue/20'}`}>
               SELECCIONAR ARCHIVOS
             </label>
           </div>
@@ -400,7 +421,7 @@ function Dashboard({
             onDragOver={e => e.preventDefault()}
             onDrop={e => {
               e.preventDefault()
-              agregarArchivos(e.dataTransfer.files)
+              agregarMayores(e.dataTransfer.files)
             }}>
             {mayores.length > 0 && (
               <div className="mb-4 space-y-1.5 w-full">
@@ -409,7 +430,7 @@ function Dashboard({
             )}
             <input type="file" multiple id="file_mayores" accept=".xlsx,.xls" className="hidden"
               onChange={e => {
-                agregarArchivos(e.target.files)
+                agregarMayores(e.target.files)
                 e.target.value = ''
               }} />
             <label htmlFor="file_mayores" className="bg-emerald-600 text-white px-8 py-3 rounded-2xl font-black text-xs hover:bg-emerald-700 cursor-pointer transition-all shadow-xl shadow-emerald-500/20">
