@@ -51,6 +51,81 @@ MP_API = "https://api.mercadopago.com"
 payments_router = APIRouter(tags=["Pagos"])
 
 
+async def _handle_payment_created(payment_id: str) -> dict:
+    """
+    Maneja payment.created (type: "payment"): pago creado en MP.
+    Si el pago pertenece a una suscripción (tiene preapproval_id) y está aprobado,
+    activa el plan del usuario. Cubre el caso en que subscription_preapproval no llega.
+    """
+    if not payment_id:
+        return {"ok": True, "skipped": True}
+
+    try:
+        resp = requests.get(
+            f"{MP_API}/v1/payments/{payment_id}",
+            headers=_headers(),
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log.warning(f"[MP Webhook] payment {payment_id} no encontrado: {resp.status_code}")
+            return {"ok": True, "skipped": True}
+        pago = resp.json()
+    except Exception as e:
+        log.error(f"[MP Webhook] Error consultando payment {payment_id}: {e}")
+        return {"ok": True, "skipped": True}
+
+    status         = pago.get("status", "")
+    preapproval_id = pago.get("preapproval_id", "")
+    payer_email    = (pago.get("payer") or {}).get("email", "")
+
+    log.info(f"[MP Webhook] payment_id={payment_id} status={status} "
+             f"preapproval_id={preapproval_id!r} payer={payer_email}")
+
+    if status != "approved":
+        return {"ok": True, "skipped": True}
+
+    if not preapproval_id:
+        # No es un pago de suscripción
+        return {"ok": True, "skipped": True}
+
+    # Consultar el preapproval para obtener plan_id_mp
+    sub = obtener_suscripcion(preapproval_id)
+    plan_id_mp = (sub or {}).get("preapproval_plan_id", "")
+    plan = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
+    if not plan:
+        log.warning(f"[MP Webhook] payment: plan_id={plan_id_mp!r} no reconocido.")
+        return {"ok": True, "skipped": True}
+
+    with get_db() as conn:
+        cur = _cursor(conn)
+
+        usuario_id = None
+
+        # 1. Por mp_preapproval_id (guardado por mp-confirm)
+        cur.execute(f"SELECT id FROM usuarios WHERE mp_preapproval_id={PL}", (preapproval_id,))
+        row = cur.fetchone()
+        if row:
+            usuario_id = row["id"] if isinstance(row, dict) else row[0]
+            log.info(f"[MP Webhook] payment: usuario encontrado por mp_preapproval_id")
+
+        # 2. Por email del pagador (fallback)
+        if not usuario_id and payer_email:
+            cur.execute(f"SELECT id FROM usuarios WHERE email={PL}", (payer_email,))
+            row = cur.fetchone()
+            if row:
+                usuario_id = row["id"] if isinstance(row, dict) else row[0]
+                log.info(f"[MP Webhook] payment: usuario encontrado por email={payer_email}")
+
+        if not usuario_id:
+            log.error(f"[MP Webhook] payment: no se pudo identificar usuario — "
+                      f"preapproval_id={preapproval_id} email={payer_email}")
+            return {"ok": True, "skipped": True}
+
+        _activar_plan_en_db(cur, usuario_id, plan, preapproval_id)
+
+    return {"ok": True}
+
+
 async def _handle_authorized_payment(invoice_id: str) -> dict:
     """
     Maneja subscription_authorized_payment: cobro mensual de una suscripción.
@@ -282,24 +357,44 @@ async def iniciar_suscripcion(plan: str, usuario: dict = Depends(get_usuario_act
 async def mp_confirm(preapproval_id: str, usuario: dict = Depends(get_usuario_actual)):
     """
     El frontend llama este endpoint cuando MP redirige con ?preapproval_id=XXX.
-    Verifica el estado del pago con MP y activa el plan del usuario autenticado.
+    - Si el pago ya está autorizado → activa el plan inmediatamente.
+    - Si está pendiente → guarda el preapproval_id para que el webhook active después.
+    En ambos casos guarda la relación usuario ↔ preapproval_id en la DB.
     """
-    sub = verificar_preapproval(preapproval_id)
-    if not sub:
+    resp = requests.get(
+        f"{MP_API}/preapproval/{preapproval_id}",
+        headers=_headers(),
+        timeout=15,
+    )
+    if resp.status_code != 200:
         raise HTTPException(status_code=400,
-                            detail="La suscripción no está activa en Mercado Pago.")
+                            detail="No se pudo verificar la suscripción en Mercado Pago.")
 
+    sub        = resp.json()
+    status     = sub.get("status", "")
     plan_id_mp = sub.get("preapproval_plan_id", "")
     plan       = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
+
     if not plan:
         raise HTTPException(status_code=400,
                             detail="No se reconoce el plan de la suscripción.")
 
     with get_db() as conn:
         cur = _cursor(conn)
-        _activar_plan_en_db(cur, usuario["id"], plan, preapproval_id)
-
-    return {"ok": True, "plan": plan}
+        if status == "authorized":
+            _activar_plan_en_db(cur, usuario["id"], plan, preapproval_id)
+            log.info(f"[MP] mp-confirm: plan {plan} activado para usuario_id={usuario['id']}")
+            return {"ok": True, "plan": plan, "activado": True}
+        else:
+            # Guardar relación usuario ↔ preapproval_id para que el webhook active después
+            cur.execute(
+                f"UPDATE usuarios SET mp_preapproval_id={PL}, plan_pendiente={PL} WHERE id={PL}",
+                (preapproval_id, plan, usuario["id"]),
+            )
+            log.info(f"[MP] mp-confirm: preapproval_id guardado para usuario_id={usuario['id']} "
+                     f"status={status!r} — webhook activará el plan")
+            return {"ok": True, "plan": plan, "activado": False,
+                    "mensaje": "Pago en proceso. Tu plan se activará automáticamente en breve."}
 
 
 @payments_router.post("/auth/cancel-subscription")
@@ -350,6 +445,10 @@ async def webhook_mp(
     # subscription_authorized_payment: cobro mensual procesado
     if tipo == "subscription_authorized_payment":
         return await _handle_authorized_payment(data_id)
+
+    # payment.created: pago aprobado — cubre casos donde subscription_preapproval no llega
+    if tipo == "payment":
+        return await _handle_payment_created(data_id)
 
     if tipo != "subscription_preapproval":
         return {"ok": True, "skipped": True}
