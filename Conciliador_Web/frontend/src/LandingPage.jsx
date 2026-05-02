@@ -82,12 +82,12 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
           </div>
           
           <h1 className="text-5xl md:text-7xl font-bold leading-[1.1] tracking-tight mb-6">
-            Contabilidad que<br />
-            <em className="not-italic bg-gradient-to-r from-[#60a5fa] to-[#10b981] bg-clip-text text-transparent">trabaja por vos</em>
+            Automatiza tu conciliación en <br />
+            <em className="not-italic bg-gradient-to-r from-[#60a5fa] to-[#10b981] bg-clip-text text-transparent">minutos, no en horas</em>
           </h1>
           
           <p className="text-[#94a3b8] text-lg max-w-xl mx-auto font-light leading-relaxed mb-10">
-            Gestioná IVA, Ganancias, IIBB y más desde una sola plataforma. Diseñado para contadores, estudios y PyMEs argentinas.
+            Recuperá tu tiempo, evitá errores ante AFIP y mantené el orden financiero de tu empresa o estudio sin depender de Excel manuales.
           </p>
           
           <div className="flex flex-wrap justify-center gap-4">
@@ -101,16 +101,16 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
 
           <div className="flex flex-wrap justify-center gap-12 mt-16">
             <div className="text-center">
-              <div className="font-mono text-2xl font-medium"><span className="text-[#60a5fa]">+2.400</span></div>
-              <div className="text-[11px] text-[#94a3b8] uppercase tracking-wider mt-1">empresas activas</div>
+              <div className="font-mono text-2xl font-medium"><span className="text-[#60a5fa]">+17</span></div>
+              <div className="text-[11px] text-[#94a3b8] uppercase tracking-wider mt-1">bancos e instituciones</div>
             </div>
             <div className="text-center">
-              <div className="font-mono text-2xl font-medium"><span className="text-[#60a5fa]">98</span>%</div>
-              <div className="text-[11px] text-[#94a3b8] uppercase tracking-wider mt-1">satisfacción</div>
+              <div className="font-mono text-2xl font-medium"><span className="text-[#60a5fa]">MULTI</span></div>
+              <div className="text-[11px] text-[#94a3b8] uppercase tracking-wider mt-1">extractos en simultáneo</div>
             </div>
             <div className="text-center">
-              <div className="font-mono text-2xl font-medium"><span className="text-[#60a5fa]">24/7</span></div>
-              <div className="text-[11px] text-[#94a3b8] uppercase tracking-wider mt-1">actualización</div>
+              <div className="font-mono text-2xl font-medium"><span className="text-[#60a5fa]">100</span>%</div>
+              <div className="text-[11px] text-[#94a3b8] uppercase tracking-wider mt-1">proceso automatizado</div>
             </div>
           </div>
         </div>
@@ -136,9 +136,35 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
       {/* How it works */}
       <section className="max-w-6xl mx-auto px-6 py-24 border-t border-white/5" id="como-funciona">
         <div className="text-center mb-16">
-          <div className="font-mono text-[10px] text-[#60a5fa] uppercase tracking-[3px] mb-4">// el sistema en acción</div>
-          <h2 className="text-3xl md:text-5xl font-bold tracking-tight">Así funciona tu nuevo Dashboard</h2>
-          <p className="text-[#94a3b8] mt-4">Interfaz moderna, intuitiva y diseñada para la velocidad.</p>
+          <div className="font-mono text-[10px] text-[#60a5fa] uppercase tracking-[3px] mb-4">// simple y rápido</div>
+          <h2 className="text-3xl md:text-5xl font-bold tracking-tight">Conciliación en 3 simples pasos</h2>
+          <p className="text-[#94a3b8] mt-4">Olvídate de cruzar filas a mano. Nuestra plataforma lo hace por vos.</p>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mb-20">
+          <div className="bg-[#141c2e] border border-white/5 rounded-2xl p-8 text-center relative hover:border-[#3b82f6]/30 transition-all hover:-translate-y-1">
+            <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-[#3b82f6] text-white flex items-center justify-center font-bold font-mono shadow-[0_0_15px_rgba(59,130,246,0.5)]">1</div>
+            <div className="text-3xl mb-4 mt-2">📥</div>
+            <h3 className="text-xl font-bold mb-3">Subí tus datos</h3>
+            <p className="text-[#94a3b8] text-sm leading-relaxed">Carga el extracto del banco (PDF/Excel) y tu mayor contable. Leemos cualquier formato.</p>
+          </div>
+          <div className="bg-[#141c2e] border border-white/5 rounded-2xl p-8 text-center relative hover:border-[#10b981]/30 transition-all hover:-translate-y-1">
+            <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-[#10b981] text-white flex items-center justify-center font-bold font-mono shadow-[0_0_15px_rgba(16,185,129,0.5)]">2</div>
+            <div className="text-3xl mb-4 mt-2">🧠</div>
+            <h3 className="text-xl font-bold mb-3">Cruce Inteligente</h3>
+            <p className="text-[#94a3b8] text-sm leading-relaxed">El algoritmo empareja movimientos y detecta diferencias al instante con precisión matemática.</p>
+          </div>
+          <div className="bg-[#141c2e] border border-white/5 rounded-2xl p-8 text-center relative hover:border-[#60a5fa]/30 transition-all hover:-translate-y-1">
+            <div className="absolute -top-4 left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-[#60a5fa] text-white flex items-center justify-center font-bold font-mono shadow-[0_0_15px_rgba(96,165,250,0.5)]">3</div>
+            <div className="text-3xl mb-4 mt-2">📊</div>
+            <h3 className="text-xl font-bold mb-3">Reporte Listo</h3>
+            <p className="text-[#94a3b8] text-sm leading-relaxed">Descarga un Excel auditado, con fórmulas armadas y listo para presentar sin miedo a errores.</p>
+          </div>
+        </div>
+
+        {/* Dashboard Preview */}
+        <div className="text-center mb-10">
+          <h3 className="text-2xl md:text-3xl font-bold tracking-tight">Así se ve la plataforma</h3>
         </div>
 
         <div className="relative mx-auto max-w-4xl rounded-2xl border border-white/10 bg-[#0f172a] shadow-2xl overflow-hidden group">
@@ -218,6 +244,38 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
         </div>
       </section>
 
+      {/* Lead Magnet */}
+      <section className="max-w-4xl mx-auto px-6 py-16 mb-24 bg-gradient-to-br from-[#1e293b] to-[#0f172a] border border-[#3b82f6]/20 rounded-3xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-[#3b82f6] rounded-full blur-[100px] opacity-20 pointer-events-none"></div>
+        <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#10b981] rounded-full blur-[100px] opacity-10 pointer-events-none"></div>
+        
+        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8 text-center md:text-left">
+          <div className="flex-1">
+            <div className="inline-flex items-center gap-2 bg-white/10 border border-white/10 rounded-full px-3 py-1 text-[10px] font-mono text-[#60a5fa] uppercase tracking-wider mb-5">
+              <span>🎁 Recurso Gratuito</span>
+            </div>
+            <h3 className="text-3xl font-bold mb-4 tracking-tight">¿Tu flujo de caja es un caos?</h3>
+            <p className="text-[#94a3b8] mb-8 leading-relaxed">
+              Descargá nuestra plantilla avanzada de Excel gratis. Organizá tus ingresos y egresos diarios sin complicarte la vida. Ideal para PyMEs y profesionales.
+            </p>
+            <a 
+              href="https://wa.me/5491100000000?text=Hola,%20quiero%20la%20plantilla%20de%20flujo%20de%20caja%20gratis" 
+              target="_blank" 
+              rel="noopener noreferrer"
+              className="inline-flex items-center justify-center gap-2 bg-[#10b981] hover:bg-[#059669] text-white px-6 py-3.5 rounded-xl font-semibold transition-all transform hover:-translate-y-1 shadow-lg shadow-[#10b981]/20 w-full md:w-auto"
+            >
+              Pedir plantilla por WhatsApp
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
+            </a>
+          </div>
+          <div className="w-full md:w-1/3 flex justify-center relative mt-6 md:mt-0">
+            <div className="w-32 h-32 md:w-48 md:h-48 bg-[#0a0e1a] border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center justify-center rotate-6 transform transition-transform duration-500 hover:rotate-0 hover:scale-105 group">
+               <span className="text-6xl group-hover:scale-110 transition-transform duration-500">📊</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Pricing */}
       <section className="max-w-6xl mx-auto px-6 py-24 border-t border-white/5" id="precios">
         <div className="text-center mb-16">
@@ -227,9 +285,9 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <PriceCard name="GRATIS" price="Free" desc="Para pruebas rápidas" features={["1 Usuario", "5 conciliaciones/mes", "Soporte básico"]} onSelect={() => { setRegForm(f => ({...f, plan: 'Free'})); openModal('register'); }} />
-          <PriceCard name="INDIVIDUAL" price="$14.900" desc="Para un profesional" featured features={["1 Usuario", "20 conciliaciones/mes", "Soporte prioritario"]} onSelect={() => { setRegForm(f => ({...f, plan: 'Individual'})); openModal('register'); }} />
-          <PriceCard name="ESTUDIO" price="$32.500" desc="Para equipos pequeños" features={["Ilimitados*", "100 conciliaciones/mes", "Soporte dedicado"]} onSelect={() => { setRegForm(f => ({...f, plan: 'Estudio'})); openModal('register'); }} />
+          <PriceCard name="GRATIS" price="Free" desc="Para conocer la herramienta" features={["5 conciliaciones/mes", "+17 bancos soportados", "PDF y Excel", "Exportación con fórmulas"]} onSelect={() => { setRegForm(f => ({...f, plan: 'Free'})); openModal('register'); }} />
+          <PriceCard name="INDIVIDUAL" price="$14.900" desc="Para el profesional independiente" featured features={["20 conciliaciones/mes", "+17 bancos soportados", "Múltiples extractos en simultáneo", "Soporte por email"]} onSelect={() => { setRegForm(f => ({...f, plan: 'Individual'})); openModal('register'); }} />
+          <PriceCard name="ESTUDIO" price="$32.500" desc="Para estudios contables" features={["100 conciliaciones/mes", "+17 bancos soportados", "Múltiples extractos en simultáneo", "Soporte prioritario"]} onSelect={() => { setRegForm(f => ({...f, plan: 'Estudio'})); openModal('register'); }} />
         </div>
 
         {/* Comparison Table */}
@@ -239,17 +297,20 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
             <thead>
               <tr className="border-b border-white/10">
                 <th className="py-4 px-4 text-[#94a3b8] font-mono text-[10px] uppercase">Característica</th>
-                <th className="py-4 px-4 text-center">Independiente</th>
-                <th className="py-4 px-4 text-center text-[#60a5fa]">Estudio</th>
+                <th className="py-4 px-4 text-center text-[#94a3b8]">Gratis</th>
+                <th className="py-4 px-4 text-center text-[#60a5fa]">Individual</th>
+                <th className="py-4 px-4 text-center text-[#a78bfa]">Estudio</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-white/5">
-              <ComparisonRow label="Usuarios" v1="1" v2="3" />
-              <ComparisonRow label="Bancos" v1="2" v2="Todos" />
-              <ComparisonRow label="Cruce de Mayores" v1="Básico" v2="Avanzado" />
-              <ComparisonRow label="Formatos" v1="PDF / Excel" v2="PDF / Excel" />
-              <ComparisonRow label="Soporte" v1="Email" v2="Email Prioritario" />
-              <ComparisonRow label="Actualizaciones" v1="Parsers" v2="Parsers (Bonificadas)" />
+              <ComparisonRow label="Conciliaciones/mes" v1="5" v2="20" v3="100" />
+              <ComparisonRow label="Bancos e instituciones" v1="+17" v2="+17" v3="+17" />
+              <ComparisonRow label="Formatos de entrada" v1="PDF + Excel" v2="PDF + Excel" v3="PDF + Excel" />
+              <ComparisonRow label="Múltiples extractos" v1="✓" v2="✓" v3="✓" />
+              <ComparisonRow label="Exportación con fórmulas" v1="✓" v2="✓" v3="✓" />
+              <ComparisonRow label="Cruce con libro mayor" v1="✓" v2="✓" v3="✓" />
+              <ComparisonRow label="Soporte" v1="Básico" v2="Email" v3="Prioritario" />
+              <ComparisonRow label="Precio/mes" v1="Gratis" v2="$14.900" v3="$32.500" />
             </tbody>
           </table>
         </div>
@@ -426,12 +487,18 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
   );
 }
 
-function ComparisonRow({ label, v1, v2 }) {
+function ComparisonRow({ label, v1, v2, v3 }) {
+  const render = (v) => {
+    if (v === '✓') return <span className="text-[#10b981] text-base font-bold">✓</span>;
+    if (v === '—') return <span className="text-[#334155]">—</span>;
+    return v;
+  };
   return (
     <tr>
       <td className="py-5 px-4 font-medium text-[#f1f5f9]">{label}</td>
-      <td className="py-5 px-4 text-center text-[#94a3b8]">{v1}</td>
-      <td className="py-5 px-4 text-center text-[#60a5fa] font-semibold">{v2}</td>
+      <td className="py-5 px-4 text-center text-[#94a3b8]">{render(v1)}</td>
+      <td className="py-5 px-4 text-center text-[#60a5fa] font-semibold">{render(v2)}</td>
+      <td className="py-5 px-4 text-center text-[#a78bfa] font-semibold">{render(v3)}</td>
     </tr>
   );
 }
