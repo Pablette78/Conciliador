@@ -74,12 +74,16 @@ async def _handle_payment_created(payment_id: str) -> dict:
         log.error(f"[MP Webhook] Error consultando payment {payment_id}: {e}")
         return {"ok": True, "skipped": True}
 
-    status         = pago.get("status", "")
-    preapproval_id = pago.get("preapproval_id", "")
-    payer_email    = (pago.get("payer") or {}).get("email", "")
+    status      = pago.get("status", "")
+    payer_email = (pago.get("payer") or {}).get("email", "")
+
+    # Para pagos de suscripción los datos clave están en point_of_interaction.transaction_data
+    tx_data        = (pago.get("point_of_interaction") or {}).get("transaction_data") or {}
+    preapproval_id = tx_data.get("subscription_id", "")  # = preapproval_id del usuario en MP
+    plan_id_mp     = tx_data.get("plan_id", "")           # = preapproval_plan_id
 
     log.info(f"[MP Webhook] payment_id={payment_id} status={status} "
-             f"preapproval_id={preapproval_id!r} payer={payer_email}")
+             f"subscription_id={preapproval_id!r} plan_id={plan_id_mp!r} payer={payer_email}")
 
     if status != "approved":
         return {"ok": True, "skipped": True}
@@ -88,9 +92,11 @@ async def _handle_payment_created(payment_id: str) -> dict:
         # No es un pago de suscripción
         return {"ok": True, "skipped": True}
 
-    # Consultar el preapproval para obtener plan_id_mp
-    sub = obtener_suscripcion(preapproval_id)
-    plan_id_mp = (sub or {}).get("preapproval_plan_id", "")
+    if not plan_id_mp:
+        # Si no hay plan_id en tx_data, consultar el preapproval como fallback
+        sub = obtener_suscripcion(preapproval_id)
+        plan_id_mp = (sub or {}).get("preapproval_plan_id", "")
+
     plan = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
     if not plan:
         log.warning(f"[MP Webhook] payment: plan_id={plan_id_mp!r} no reconocido.")
