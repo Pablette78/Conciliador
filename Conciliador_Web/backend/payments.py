@@ -194,11 +194,11 @@ def _headers(idempotency_key: str = "") -> dict:
     return h
 
 
-def crear_preapproval_usuario(usuario_id: int, usuario_email: str, plan: str) -> dict:
+def crear_preapproval_usuario(usuario_id: int, plan: str) -> dict:
     """
-    Crea un preapproval INDIVIDUAL en MP para este usuario específico.
-    - external_reference = str(usuario_id) → el webhook siempre puede identificar al usuario
-    - payer_email = email del usuario       → fallback adicional de identificación
+    Crea un preapproval INDIVIDUAL en MP para este usuario.
+    - external_reference = str(usuario_id) → el webhook siempre identifica al usuario
+    - Sin payer_email → MP genera un checkout donde el usuario ingresa su tarjeta
     - El preapproval_id devuelto se guarda en DB antes de redirigir al usuario
 
     Retorna: { "init_point": str, "preapproval_id": str }
@@ -212,11 +212,12 @@ def crear_preapproval_usuario(usuario_id: int, usuario_email: str, plan: str) ->
             "Creá el plan en MP y configurá la variable de entorno."
         )
 
+    # No incluir payer_email: si se incluye, MP exige card_token_id (flujo server-side).
+    # Sin payer_email, MP genera un init_point de checkout donde el usuario ingresa su tarjeta.
     payload = {
         "preapproval_plan_id": plan_id,
         "reason":             f"ContaFlex Plan {plan}",
         "external_reference": str(usuario_id),
-        "payer_email":        usuario_email,
         "back_url":           FRONTEND_URL,
     }
 
@@ -332,7 +333,7 @@ async def iniciar_suscripcion(plan: str, usuario: dict = Depends(get_usuario_act
         raise HTTPException(status_code=400, detail="Ya tenés este plan activo.")
 
     try:
-        result = crear_preapproval_usuario(usuario["id"], usuario["email"], plan)
+        result = crear_preapproval_usuario(usuario["id"], plan)
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=502, detail=str(e))
 
