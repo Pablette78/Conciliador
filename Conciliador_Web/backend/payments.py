@@ -42,7 +42,7 @@ PLAN_IDS = {
 }
 
 PLAN_PRECIOS = {
-    "Individual": 14900,
+    "Individual": 100,   # TEST — restaurar a 14900
     "Estudio":    32500,
 }
 
