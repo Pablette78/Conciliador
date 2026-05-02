@@ -41,11 +41,6 @@ PLAN_IDS = {
     "Estudio":    os.getenv("MP_PLAN_ID_ESTUDIO",    ""),
 }
 
-PLAN_PRECIOS = {
-    "Individual": 100,   # TEST — restaurar a 14900
-    "Estudio":    32500,
-}
-
 MP_API = "https://api.mercadopago.com"
 
 payments_router = APIRouter(tags=["Pagos"])
@@ -107,7 +102,7 @@ async def _handle_payment_created(payment_id: str) -> dict:
 
         usuario_id = None
 
-        # 1. Por mp_preapproval_id (guardado por mp-confirm)
+        # 1. Por mp_preapproval_id (guardado en DB al iniciar la suscripción)
         cur.execute(f"SELECT id FROM usuarios WHERE mp_preapproval_id={PL}", (preapproval_id,))
         row = cur.fetchone()
         if row:
@@ -199,13 +194,14 @@ def _headers(idempotency_key: str = "") -> dict:
     return h
 
 
-def get_init_point(usuario_id: int, plan: str) -> dict:
+def crear_preapproval_usuario(usuario_id: int, usuario_email: str, plan: str) -> dict:
     """
-    Obtiene el init_point del plan MP para redirigir al usuario al checkout.
-    El usuario ingresa su tarjeta directamente en el checkout de MP.
-    MP redirige al back_url con ?preapproval_id=XXX al finalizar.
+    Crea un preapproval INDIVIDUAL en MP para este usuario específico.
+    - external_reference = str(usuario_id) → el webhook siempre puede identificar al usuario
+    - payer_email = email del usuario       → fallback adicional de identificación
+    - El preapproval_id devuelto se guarda en DB antes de redirigir al usuario
 
-    Retorna: { "init_point": str }
+    Retorna: { "init_point": str, "preapproval_id": str }
     Lanza ValueError si el plan no tiene MP_PLAN_ID configurado.
     Lanza RuntimeError si MP devuelve un error.
     """
@@ -216,44 +212,34 @@ def get_init_point(usuario_id: int, plan: str) -> dict:
             "Creá el plan en MP y configurá la variable de entorno."
         )
 
-    resp = requests.get(
-        f"{MP_API}/preapproval_plan/{plan_id}",
+    payload = {
+        "preapproval_plan_id": plan_id,
+        "reason":             f"ContaFlex Plan {plan}",
+        "external_reference": str(usuario_id),
+        "payer_email":        usuario_email,
+        "back_url":           FRONTEND_URL,
+    }
+
+    resp = requests.post(
+        f"{MP_API}/preapproval",
+        json=payload,
         headers=_headers(),
         timeout=15,
     )
-    if resp.status_code != 200:
-        log.error(f"[MP] Error consultando plan {plan_id}: {resp.status_code} {resp.text}")
-        raise RuntimeError(f"Mercado Pago respondió {resp.status_code}: {resp.text}")
+    if resp.status_code not in (200, 201):
+        log.error(f"[MP] Error creando preapproval usuario_id={usuario_id}: "
+                  f"{resp.status_code} {resp.text[:300]}")
+        raise RuntimeError(f"Mercado Pago respondió {resp.status_code}: {resp.text[:200]}")
 
-    data       = resp.json()
-    init_point = data.get("init_point")
-    if not init_point:
-        raise RuntimeError(f"MP no devolvió init_point para el plan {plan_id}")
+    data           = resp.json()
+    init_point     = data.get("init_point")
+    preapproval_id = data.get("id")
 
-    log.info(f"[MP] init_point obtenido para usuario_id={usuario_id} plan={plan}")
-    return {"init_point": init_point}
+    if not init_point or not preapproval_id:
+        raise RuntimeError("MP no devolvió init_point o id en el preapproval")
 
-
-def verificar_preapproval(preapproval_id: str) -> dict | None:
-    """
-    Consulta un preapproval en MP y lo retorna solo si está autorizado.
-    Retorna None si no existe o el pago no está confirmado.
-    """
-    resp = requests.get(
-        f"{MP_API}/preapproval/{preapproval_id}",
-        headers=_headers(),
-        timeout=15,
-    )
-    if resp.status_code != 200:
-        log.error(f"[MP] Error consultando preapproval {preapproval_id}: {resp.status_code}")
-        return None
-
-    data = resp.json()
-    if data.get("status") != "authorized":
-        log.info(f"[MP] preapproval {preapproval_id} estado={data.get('status')} — no autorizado")
-        return None
-
-    return data
+    log.info(f"[MP] Preapproval {preapproval_id} creado para usuario_id={usuario_id} plan={plan}")
+    return {"init_point": init_point, "preapproval_id": preapproval_id}
 
 
 def cancelar_suscripcion(preapproval_id: str) -> bool:
@@ -336,27 +322,30 @@ def _bajar_a_free_en_db(cur, usuario_id: int, razon: str) -> None:
 @payments_router.post("/auth/subscribe")
 async def iniciar_suscripcion(plan: str, usuario: dict = Depends(get_usuario_actual)):
     """
-    Crea un preapproval individual en MP y devuelve { init_point, preapproval_id }.
-    El preapproval_id se guarda en DB como pending para que el webhook pueda identificar al usuario.
+    Crea un preapproval individual en MP con external_reference=usuario_id y devuelve init_point.
+    Guarda el preapproval_id en DB ANTES de redirigir al usuario, de modo que el webhook
+    pueda identificarlo aunque llegue antes de que el usuario vuelva del checkout.
     """
-    if plan not in PLAN_PRECIOS:
+    if plan not in PLAN_IDS:
         raise HTTPException(status_code=400, detail=f"Plan '{plan}' no válido para suscripción.")
     if plan == usuario.get("plan"):
         raise HTTPException(status_code=400, detail="Ya tenés este plan activo.")
 
     try:
-        result = get_init_point(usuario["id"], plan)
+        result = crear_preapproval_usuario(usuario["id"], usuario["email"], plan)
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=502, detail=str(e))
 
+    # Guardar preapproval_id en DB AHORA — antes de que el usuario pague
+    # Garantiza que el webhook encuentre al usuario por mp_preapproval_id
     with get_db() as conn:
         cur = _cursor(conn)
         cur.execute(
-            f"UPDATE usuarios SET plan_pendiente={PL} WHERE id={PL}",
-            (plan, usuario["id"]),
+            f"UPDATE usuarios SET plan_pendiente={PL}, mp_preapproval_id={PL} WHERE id={PL}",
+            (plan, result["preapproval_id"], usuario["id"]),
         )
 
-    return result
+    return {"init_point": result["init_point"]}
 
 
 @payments_router.post("/auth/mp-confirm")
