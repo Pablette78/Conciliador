@@ -491,7 +491,7 @@ async def reset_usuario_para_test(username: str, plan: str = "Individual"):
 # --- Verificacion de Email ---
 @router.get("/verificar")
 async def verificar_email(token: str):
-    from payments import get_init_point, PLAN_PRECIOS
+    from payments import crear_preapproval_usuario, PLAN_IDS
     from fastapi.responses import RedirectResponse
 
     with get_db() as conn:
@@ -510,7 +510,7 @@ async def verificar_email(token: str):
         )
 
     # Plan Free → mostrar pantalla de éxito con link a la app
-    if not plan_pendiente or plan_pendiente not in PLAN_PRECIOS:
+    if not plan_pendiente or plan_pendiente not in PLAN_IDS:
         return HTMLResponse(f"""
         <!DOCTYPE html>
         <html lang="es">
@@ -527,10 +527,19 @@ async def verificar_email(token: str):
         </div></body></html>
         """)
 
-    # Plan pago → redirigir al checkout del plan MP
+    # Plan pago → crear preapproval individual y redirigir al checkout de MP
     try:
-        result     = get_init_point(row["id"], plan_pendiente)
-        init_point = result["init_point"]
+        usuario_email = row.get("email", "")
+        result        = crear_preapproval_usuario(row["id"], usuario_email, plan_pendiente)
+        init_point    = result["init_point"]
+
+        # Guardar preapproval_id en DB para que el webhook pueda identificar al usuario
+        with get_db() as conn2:
+            cur2 = _cursor(conn2)
+            cur2.execute(
+                f"UPDATE usuarios SET mp_preapproval_id={PL} WHERE id={PL}",
+                (result["preapproval_id"], row["id"]),
+            )
 
         return RedirectResponse(url=init_point, status_code=302)
 
