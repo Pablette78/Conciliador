@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import axios from 'axios'
 import LandingPage from './LandingPage'
+import Terminos from './Terminos'
+import Privacidad from './Privacidad'
 import {
   PieChart, Pie, Cell, Legend, ResponsiveContainer
 } from 'recharts'
@@ -275,8 +277,8 @@ export default function App() {
   }
 
   if (!token || !usuario) {
-    if (view === 'terminos') return <PlaceholderPage title="Términos y Condiciones" onBack={() => setView('dashboard')} />
-    if (view === 'privacidad') return <PlaceholderPage title="Política de Privacidad" onBack={() => setView('dashboard')} />
+    if (view === 'terminos') return <Terminos onBack={() => setView('dashboard')} />
+    if (view === 'privacidad') return <Privacidad onBack={() => setView('dashboard')} />
     return <LandingPage onLogin={handleLogin} onRegister={handleRegister} authError={loginError} onForgotPassword={handleForgotPassword} setView={setView} />
   }
 
