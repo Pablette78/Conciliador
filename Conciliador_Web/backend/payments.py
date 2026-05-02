@@ -194,16 +194,18 @@ def _headers(idempotency_key: str = "") -> dict:
     return h
 
 
-def crear_preapproval_usuario(usuario_id: int, plan: str) -> dict:
+def crear_preapproval_usuario(usuario_id: int, usuario_email: str, plan: str) -> dict:
     """
-    Crea un preapproval INDIVIDUAL en MP para este usuario.
-    - external_reference = str(usuario_id) → el webhook siempre identifica al usuario
-    - Sin payer_email → MP genera un checkout donde el usuario ingresa su tarjeta
-    - El preapproval_id devuelto se guarda en DB antes de redirigir al usuario
+    Crea un preapproval INDIVIDUAL en MP para este usuario con checkout URL.
+
+    Usa auto_recurring (no preapproval_plan_id) porque POST /preapproval con
+    preapproval_plan_id siempre exige card_token_id (flujo server-to-server).
+    Con auto_recurring + payer_email, MP devuelve un init_point de checkout.
+
+    El precio se obtiene en tiempo real del plan en MP para que cualquier
+    cambio de precio via PATCH al plan se refleje automáticamente.
 
     Retorna: { "init_point": str, "preapproval_id": str }
-    Lanza ValueError si el plan no tiene MP_PLAN_ID configurado.
-    Lanza RuntimeError si MP devuelve un error.
     """
     plan_id = PLAN_IDS.get(plan, "")
     if not plan_id:
@@ -212,21 +214,30 @@ def crear_preapproval_usuario(usuario_id: int, plan: str) -> dict:
             "Creá el plan en MP y configurá la variable de entorno."
         )
 
-    # No incluir payer_email: si se incluye, MP exige card_token_id (flujo server-side).
-    # Sin payer_email, MP genera un init_point de checkout donde el usuario ingresa su tarjeta.
+    # Obtener precio actual del plan en MP
+    plan_resp = requests.get(f"{MP_API}/preapproval_plan/{plan_id}",
+                             headers=_headers(), timeout=15)
+    if plan_resp.status_code != 200:
+        raise RuntimeError(f"No se pudo obtener el plan de MP: {plan_resp.status_code}")
+    precio = plan_resp.json().get("auto_recurring", {}).get("transaction_amount")
+    if not precio:
+        raise RuntimeError(f"El plan {plan} no tiene transaction_amount en MP.")
+
     payload = {
-        "preapproval_plan_id": plan_id,
         "reason":             f"ContaFlex Plan {plan}",
         "external_reference": str(usuario_id),
+        "payer_email":        usuario_email,
         "back_url":           FRONTEND_URL,
+        "auto_recurring": {
+            "frequency":          1,
+            "frequency_type":     "months",
+            "transaction_amount": precio,
+            "currency_id":        "ARS",
+        },
     }
 
-    resp = requests.post(
-        f"{MP_API}/preapproval",
-        json=payload,
-        headers=_headers(),
-        timeout=15,
-    )
+    resp = requests.post(f"{MP_API}/preapproval", json=payload,
+                         headers=_headers(), timeout=15)
     if resp.status_code not in (200, 201):
         log.error(f"[MP] Error creando preapproval usuario_id={usuario_id}: "
                   f"{resp.status_code} {resp.text[:300]}")
@@ -239,7 +250,8 @@ def crear_preapproval_usuario(usuario_id: int, plan: str) -> dict:
     if not init_point or not preapproval_id:
         raise RuntimeError("MP no devolvió init_point o id en el preapproval")
 
-    log.info(f"[MP] Preapproval {preapproval_id} creado para usuario_id={usuario_id} plan={plan}")
+    log.info(f"[MP] Preapproval {preapproval_id} creado para usuario_id={usuario_id} "
+             f"plan={plan} precio={precio}")
     return {"init_point": init_point, "preapproval_id": preapproval_id}
 
 
@@ -333,7 +345,7 @@ async def iniciar_suscripcion(plan: str, usuario: dict = Depends(get_usuario_act
         raise HTTPException(status_code=400, detail="Ya tenés este plan activo.")
 
     try:
-        result = crear_preapproval_usuario(usuario["id"], plan)
+        result = crear_preapproval_usuario(usuario["id"], usuario["email"], plan)
     except (ValueError, RuntimeError) as e:
         raise HTTPException(status_code=502, detail=str(e))
 
@@ -371,7 +383,11 @@ async def mp_confirm(preapproval_id: str, usuario: dict = Depends(get_usuario_ac
     plan_id_mp = sub.get("preapproval_plan_id", "")
     plan       = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
 
+    # Fallback: si la suscripción no tiene plan_id (auto_recurring sin plan),
+    # usar el plan_pendiente guardado en DB para este usuario
     if not plan:
+        plan = usuario.get("plan_pendiente")
+    if not plan or plan not in PLAN_IDS:
         raise HTTPException(status_code=400,
                             detail="No se reconoce el plan de la suscripción.")
 
@@ -473,15 +489,13 @@ async def webhook_mp(
     log.info(f"[MP Webhook] preapproval_id={preapproval_id} estado={estado} "
              f"external_ref={external_ref!r} payer={payer_email} plan_id={plan_id_mp}")
 
-    plan = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
-    if not plan:
-        log.error(f"[MP Webhook] plan_id={plan_id_mp} no reconocido — ignorado.")
-        return {"ok": True, "skipped": True}
+    # Identificar plan: primero por preapproval_plan_id, luego por plan_pendiente en DB
+    plan_por_id = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
 
     with get_db() as conn:
         cur = _cursor(conn)
 
-        # 1. Identificar por external_reference (más confiable)
+        # 1. Identificar usuario por external_reference (más confiable — siempre presente)
         usuario_id = None
         if external_ref and external_ref.isdigit():
             cur.execute(f"SELECT id FROM usuarios WHERE id={PL}", (int(external_ref),))
@@ -490,7 +504,7 @@ async def webhook_mp(
                 usuario_id = int(external_ref)
                 log.info(f"[MP Webhook] Usuario encontrado por external_reference={external_ref}")
 
-        # 2. Por mp_preapproval_id pending (guardado al llamar /auth/subscribe)
+        # 2. Por mp_preapproval_id (guardado en DB al iniciar la suscripción)
         if not usuario_id:
             cur.execute(f"SELECT id FROM usuarios WHERE mp_preapproval_id={PL}", (preapproval_id,))
             row = cur.fetchone()
@@ -498,7 +512,7 @@ async def webhook_mp(
                 usuario_id = row["id"] if isinstance(row, dict) else row[0]
                 log.info(f"[MP Webhook] Usuario encontrado por mp_preapproval_id={preapproval_id}")
 
-        # 3. Por email del pagador (fallback — requiere que emails coincidan)
+        # 3. Por email del pagador (fallback)
         if not usuario_id and payer_email:
             cur.execute(f"SELECT id FROM usuarios WHERE email={PL}", (payer_email,))
             row = cur.fetchone()
@@ -509,6 +523,18 @@ async def webhook_mp(
         if not usuario_id:
             log.error(f"[MP Webhook] No se pudo identificar usuario para "
                       f"preapproval_id={preapproval_id} — ignorado.")
+            return {"ok": True, "skipped": True}
+
+        # Identificar plan: por plan_id de MP, o por plan_pendiente en DB
+        plan = plan_por_id
+        if not plan:
+            cur.execute(f"SELECT plan_pendiente FROM usuarios WHERE id={PL}", (usuario_id,))
+            urow = cur.fetchone()
+            plan = (urow["plan_pendiente"] if isinstance(urow, dict) else urow[0]) if urow else None
+            if plan:
+                log.info(f"[MP Webhook] Plan identificado por plan_pendiente={plan!r}")
+        if not plan:
+            log.error(f"[MP Webhook] No se pudo identificar plan para usuario_id={usuario_id}")
             return {"ok": True, "skipped": True}
 
         if estado == "authorized":

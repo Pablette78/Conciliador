@@ -529,7 +529,7 @@ async def verificar_email(token: str):
 
     # Plan pago → crear preapproval individual y redirigir al checkout de MP
     try:
-        result = crear_preapproval_usuario(row["id"], plan_pendiente)
+        result = crear_preapproval_usuario(row["id"], row.get("email", ""), plan_pendiente)
         init_point    = result["init_point"]
 
         # Guardar preapproval_id en DB para que el webhook pueda identificar al usuario
