@@ -244,38 +244,6 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
         </div>
       </section>
 
-      {/* Lead Magnet */}
-      <section className="max-w-4xl mx-auto px-6 py-16 mb-24 bg-gradient-to-br from-[#1e293b] to-[#0f172a] border border-[#3b82f6]/20 rounded-3xl relative overflow-hidden">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-[#3b82f6] rounded-full blur-[100px] opacity-20 pointer-events-none"></div>
-        <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#10b981] rounded-full blur-[100px] opacity-10 pointer-events-none"></div>
-        
-        <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-8 text-center md:text-left">
-          <div className="flex-1">
-            <div className="inline-flex items-center gap-2 bg-white/10 border border-white/10 rounded-full px-3 py-1 text-[10px] font-mono text-[#60a5fa] uppercase tracking-wider mb-5">
-              <span>🎁 Recurso Gratuito</span>
-            </div>
-            <h3 className="text-3xl font-bold mb-4 tracking-tight">¿Tu flujo de caja es un caos?</h3>
-            <p className="text-[#94a3b8] mb-8 leading-relaxed">
-              Descargá nuestra plantilla avanzada de Excel gratis. Organizá tus ingresos y egresos diarios sin complicarte la vida. Ideal para PyMEs y profesionales.
-            </p>
-            <a 
-              href="https://wa.me/5491100000000?text=Hola,%20quiero%20la%20plantilla%20de%20flujo%20de%20caja%20gratis" 
-              target="_blank" 
-              rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 bg-[#10b981] hover:bg-[#059669] text-white px-6 py-3.5 rounded-xl font-semibold transition-all transform hover:-translate-y-1 shadow-lg shadow-[#10b981]/20 w-full md:w-auto"
-            >
-              Pedir plantilla por WhatsApp
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z"></path></svg>
-            </a>
-          </div>
-          <div className="w-full md:w-1/3 flex justify-center relative mt-6 md:mt-0">
-            <div className="w-32 h-32 md:w-48 md:h-48 bg-[#0a0e1a] border border-white/10 rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] flex items-center justify-center rotate-6 transform transition-transform duration-500 hover:rotate-0 hover:scale-105 group">
-               <span className="text-6xl group-hover:scale-110 transition-transform duration-500">📊</span>
-            </div>
-          </div>
-        </div>
-      </section>
-
       {/* Pricing */}
       <section className="max-w-6xl mx-auto px-6 py-24 border-t border-white/5" id="precios">
         <div className="text-center mb-16">
