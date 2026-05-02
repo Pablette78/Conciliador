@@ -13,6 +13,7 @@ from fastapi.responses import FileResponse
 
 from logger import get_logger
 from auth import init_db, get_usuario_actual, require_admin, get_db, PL, router as auth_router
+from payments import payments_router
 
 logger = get_logger("conciliador.main")
 
@@ -33,8 +34,9 @@ async def startup():
     init_db()
     logger.info("Base de datos de usuarios inicializada.")
 
-# Registrar rutas de autenticación
+# Registrar rutas
 app.include_router(auth_router)
+app.include_router(payments_router)
 
 # --- CORS ---
 # FRONTEND_URL puede ser una lista separada por comas para múltiples dominios

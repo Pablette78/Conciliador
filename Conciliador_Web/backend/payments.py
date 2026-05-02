@@ -1,0 +1,549 @@
+"""
+Módulo de pagos — Mercado Pago suscripciones recurrentes (preapproval_plan).
+
+Flujo:
+  1. Los planes Individual y Estudio se crean UNA SOLA VEZ en MP via preapproval_plan.
+     Sus IDs se guardan como variables de entorno (MP_PLAN_ID_INDIVIDUAL / MP_PLAN_ID_ESTUDIO).
+  2. Cuando un usuario quiere suscribirse, se crea un preapproval POR USUARIO via POST /preapproval,
+     con external_reference=str(usuario_id) para identificarlo en el webhook.
+  3. El usuario paga en el checkout de MP.
+  4. MP llama a POST /webhooks/mp (webhook) → activa el plan en DB.
+  5. MP también redirige al back_url → frontend llama a POST /auth/mp-confirm como confirmación.
+
+Variables de entorno requeridas:
+  MP_ACCESS_TOKEN       — token activo (TEST-... o APP_USR-...)
+  MP_PLAN_ID_INDIVIDUAL — ID del plan Individual en MP (preapproval_plan)
+  MP_PLAN_ID_ESTUDIO    — ID del plan Estudio en MP (preapproval_plan)
+
+Variables opcionales:
+  MP_WEBHOOK_SECRET     — secret para validar firmas HMAC-SHA256 del webhook
+  FRONTEND_URL          — URL del frontend (default: https://contaflex.ar)
+"""
+
+import os
+import hmac
+import hashlib
+import logging
+import requests
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Header
+
+from auth import get_usuario_actual, get_db, _cursor, PL, PLAN_LIMITS
+
+log = logging.getLogger("payments")
+
+MP_ACCESS_TOKEN   = os.getenv("MP_ACCESS_TOKEN", "")
+MP_WEBHOOK_SECRET = os.getenv("MP_WEBHOOK_SECRET", "")
+FRONTEND_URL      = os.getenv("FRONTEND_URL", "https://contaflex.ar")
+
+PLAN_IDS = {
+    "Individual": os.getenv("MP_PLAN_ID_INDIVIDUAL", ""),
+    "Estudio":    os.getenv("MP_PLAN_ID_ESTUDIO",    ""),
+}
+
+MP_API = "https://api.mercadopago.com"
+
+payments_router = APIRouter(tags=["Pagos"])
+
+
+async def _handle_payment_created(payment_id: str) -> dict:
+    """
+    Maneja payment.created (type: "payment"): pago creado en MP.
+    Si el pago pertenece a una suscripción (tiene preapproval_id) y está aprobado,
+    activa el plan del usuario. Cubre el caso en que subscription_preapproval no llega.
+    """
+    if not payment_id:
+        return {"ok": True, "skipped": True}
+
+    try:
+        resp = requests.get(
+            f"{MP_API}/v1/payments/{payment_id}",
+            headers=_headers(),
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log.warning(f"[MP Webhook] payment {payment_id} no encontrado: {resp.status_code}")
+            return {"ok": True, "skipped": True}
+        pago = resp.json()
+    except Exception as e:
+        log.error(f"[MP Webhook] Error consultando payment {payment_id}: {e}")
+        return {"ok": True, "skipped": True}
+
+    status      = pago.get("status", "")
+    payer_email = (pago.get("payer") or {}).get("email", "")
+
+    # Para pagos de suscripción los datos clave están en point_of_interaction.transaction_data
+    tx_data        = (pago.get("point_of_interaction") or {}).get("transaction_data") or {}
+    preapproval_id = tx_data.get("subscription_id", "")  # = preapproval_id del usuario en MP
+    plan_id_mp     = tx_data.get("plan_id", "")           # = preapproval_plan_id
+
+    log.info(f"[MP Webhook] payment_id={payment_id} status={status} "
+             f"subscription_id={preapproval_id!r} plan_id={plan_id_mp!r} payer={payer_email}")
+
+    if status != "approved":
+        return {"ok": True, "skipped": True}
+
+    if not preapproval_id:
+        # No es un pago de suscripción
+        return {"ok": True, "skipped": True}
+
+    if not plan_id_mp:
+        # Si no hay plan_id en tx_data, consultar el preapproval como fallback
+        sub = obtener_suscripcion(preapproval_id)
+        plan_id_mp = (sub or {}).get("preapproval_plan_id", "")
+
+    plan = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
+    if not plan:
+        log.warning(f"[MP Webhook] payment: plan_id={plan_id_mp!r} no reconocido.")
+        return {"ok": True, "skipped": True}
+
+    with get_db() as conn:
+        cur = _cursor(conn)
+
+        usuario_id = None
+
+        # 1. Por mp_preapproval_id (guardado en DB al iniciar la suscripción)
+        cur.execute(f"SELECT id FROM usuarios WHERE mp_preapproval_id={PL}", (preapproval_id,))
+        row = cur.fetchone()
+        if row:
+            usuario_id = row["id"] if isinstance(row, dict) else row[0]
+            log.info(f"[MP Webhook] payment: usuario encontrado por mp_preapproval_id")
+
+        # 2. Por email del pagador (fallback)
+        if not usuario_id and payer_email:
+            cur.execute(f"SELECT id FROM usuarios WHERE email={PL}", (payer_email,))
+            row = cur.fetchone()
+            if row:
+                usuario_id = row["id"] if isinstance(row, dict) else row[0]
+                log.info(f"[MP Webhook] payment: usuario encontrado por email={payer_email}")
+
+        if not usuario_id:
+            log.error(f"[MP Webhook] payment: no se pudo identificar usuario — "
+                      f"preapproval_id={preapproval_id} email={payer_email}")
+            return {"ok": True, "skipped": True}
+
+        _activar_plan_en_db(cur, usuario_id, plan, preapproval_id)
+
+    return {"ok": True}
+
+
+async def _handle_authorized_payment(invoice_id: str) -> dict:
+    """
+    Maneja subscription_authorized_payment: cobro mensual de una suscripción.
+    Consulta el pago a MP, obtiene el preapproval_id y confirma que el plan
+    sigue activo en DB. Si el pago fue rechazado, baja el usuario a Free.
+    """
+    if not invoice_id:
+        return {"ok": True, "skipped": True}
+
+    try:
+        resp = requests.get(
+            f"{MP_API}/authorized_payments/{invoice_id}",
+            headers=_headers(),
+            timeout=15,
+        )
+        if resp.status_code != 200:
+            log.error(f"[MP Webhook] Error consultando authorized_payment {invoice_id}: "
+                      f"{resp.status_code}")
+            return {"ok": True, "skipped": True}
+        pago = resp.json()
+    except Exception as e:
+        log.error(f"[MP Webhook] Error consultando authorized_payment {invoice_id}: {e}")
+        return {"ok": True, "skipped": True}
+
+    preapproval_id = pago.get("preapproval_id", "")
+    status         = pago.get("status", "")
+
+    log.info(f"[MP Webhook] authorized_payment invoice_id={invoice_id} "
+             f"preapproval_id={preapproval_id} status={status}")
+
+    if not preapproval_id:
+        return {"ok": True, "skipped": True}
+
+    with get_db() as conn:
+        cur = _cursor(conn)
+        cur.execute(f"SELECT id, plan FROM usuarios WHERE mp_preapproval_id={PL}",
+                    (preapproval_id,))
+        row = cur.fetchone()
+        if not row:
+            log.warning(f"[MP Webhook] authorized_payment: no se encontró usuario "
+                        f"con preapproval_id={preapproval_id}")
+            return {"ok": True, "skipped": True}
+
+        usuario_id = row["id"] if isinstance(row, dict) else row[0]
+
+        if status == "authorized":
+            log.info(f"[MP Webhook] Cobro mensual OK para usuario_id={usuario_id}")
+        elif status in ("cancelled", "refunded", "charged_back"):
+            _bajar_a_free_en_db(cur, usuario_id, f"cobro mensual status={status}")
+
+    return {"ok": True}
+
+
+# ---------------------------------------------------------------------------
+# Funciones MP (puras, sin FastAPI)
+# ---------------------------------------------------------------------------
+
+def _headers(idempotency_key: str = "") -> dict:
+    h = {
+        "Authorization": f"Bearer {MP_ACCESS_TOKEN}",
+        "Content-Type": "application/json",
+    }
+    if idempotency_key:
+        h["X-Idempotency-Key"] = idempotency_key
+    return h
+
+
+def crear_preapproval_usuario(usuario_id: int, usuario_email: str, plan: str) -> dict:
+    """
+    Crea un preapproval INDIVIDUAL en MP para este usuario con checkout URL.
+
+    Usa auto_recurring (no preapproval_plan_id) porque POST /preapproval con
+    preapproval_plan_id siempre exige card_token_id (flujo server-to-server).
+    Con auto_recurring + payer_email, MP devuelve un init_point de checkout.
+
+    El precio se obtiene en tiempo real del plan en MP para que cualquier
+    cambio de precio via PATCH al plan se refleje automáticamente.
+
+    Retorna: { "init_point": str, "preapproval_id": str }
+    """
+    plan_id = PLAN_IDS.get(plan, "")
+    if not plan_id:
+        raise ValueError(
+            f"Plan '{plan}' no tiene MP_PLAN_ID configurado. "
+            "Creá el plan en MP y configurá la variable de entorno."
+        )
+
+    # Obtener precio actual del plan en MP
+    plan_resp = requests.get(f"{MP_API}/preapproval_plan/{plan_id}",
+                             headers=_headers(), timeout=15)
+    if plan_resp.status_code != 200:
+        raise RuntimeError(f"No se pudo obtener el plan de MP: {plan_resp.status_code}")
+    precio = plan_resp.json().get("auto_recurring", {}).get("transaction_amount")
+    if not precio:
+        raise RuntimeError(f"El plan {plan} no tiene transaction_amount en MP.")
+
+    payload = {
+        "reason":             f"ContaFlex Plan {plan}",
+        "external_reference": str(usuario_id),
+        "payer_email":        usuario_email,
+        "back_url":           FRONTEND_URL,
+        "auto_recurring": {
+            "frequency":          1,
+            "frequency_type":     "months",
+            "transaction_amount": precio,
+            "currency_id":        "ARS",
+        },
+    }
+
+    resp = requests.post(f"{MP_API}/preapproval", json=payload,
+                         headers=_headers(), timeout=15)
+    if resp.status_code not in (200, 201):
+        log.error(f"[MP] Error creando preapproval usuario_id={usuario_id}: "
+                  f"{resp.status_code} {resp.text[:300]}")
+        raise RuntimeError(f"Mercado Pago respondió {resp.status_code}: {resp.text[:200]}")
+
+    data           = resp.json()
+    init_point     = data.get("init_point")
+    preapproval_id = data.get("id")
+
+    if not init_point or not preapproval_id:
+        raise RuntimeError("MP no devolvió init_point o id en el preapproval")
+
+    log.info(f"[MP] Preapproval {preapproval_id} creado para usuario_id={usuario_id} "
+             f"plan={plan} precio={precio}")
+    return {"init_point": init_point, "preapproval_id": preapproval_id}
+
+
+def cancelar_suscripcion(preapproval_id: str) -> bool:
+    """Cancela una suscripción activa en MP. Devuelve True si fue exitoso."""
+    resp = requests.patch(
+        f"{MP_API}/preapproval/{preapproval_id}",
+        json={"status": "cancelled"},
+        headers=_headers(),
+        timeout=15,
+    )
+    ok = resp.status_code in (200, 201)
+    if not ok:
+        log.error(f"[MP] Error cancelar preapproval {preapproval_id}: {resp.status_code} {resp.text}")
+    return ok
+
+
+def obtener_suscripcion(preapproval_id: str) -> dict | None:
+    """
+    Consulta el estado completo de un preapproval en MP.
+    Retorna None si el ID no existe (404). Lanza si hay otro error.
+    """
+    resp = requests.get(
+        f"{MP_API}/preapproval/{preapproval_id}",
+        headers=_headers(),
+        timeout=15,
+    )
+    if resp.status_code == 404:
+        log.warning(f"[MP] preapproval {preapproval_id} no encontrado en MP (404).")
+        return None
+    resp.raise_for_status()
+    return resp.json()
+
+
+def validar_firma_webhook(x_signature: str, x_request_id: str, data_id: str) -> bool:
+    """
+    Verifica la firma HMAC-SHA256 del webhook de MP.
+    Header: "ts=<timestamp>,v1=<hex_digest>"
+    Retorna True si no hay MP_WEBHOOK_SECRET configurado (modo dev sin secret).
+    """
+    if not MP_WEBHOOK_SECRET:
+        log.warning("[MP] MP_WEBHOOK_SECRET no configurado — firma NO verificada.")
+        return True
+
+    try:
+        parts    = dict(p.split("=", 1) for p in x_signature.split(","))
+        ts       = parts.get("ts", "")
+        v1       = parts.get("v1", "")
+        template = f"id:{data_id};request-id:{x_request_id};ts:{ts};"
+        digest   = hmac.new(
+            MP_WEBHOOK_SECRET.encode(), template.encode(), hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(digest, v1)
+    except Exception as e:
+        log.error(f"[MP] Error validando firma: {e}")
+        return False
+
+
+def _activar_plan_en_db(cur, usuario_id: int, plan: str, preapproval_id: str) -> None:
+    nuevo_limite = PLAN_LIMITS.get(plan, 5)
+    cur.execute(
+        f"UPDATE usuarios SET plan={PL}, limite_mensual={PL}, activo=1, "
+        f"plan_pendiente=NULL, mp_preapproval_id={PL} WHERE id={PL}",
+        (plan, nuevo_limite, preapproval_id, usuario_id),
+    )
+    log.info(f"[MP] Plan {plan} activado para usuario_id={usuario_id}")
+
+
+def _bajar_a_free_en_db(cur, usuario_id: int, razon: str) -> None:
+    cur.execute(
+        f"UPDATE usuarios SET plan='Free', limite_mensual=5, mp_preapproval_id=NULL WHERE id={PL}",
+        (usuario_id,),
+    )
+    log.info(f"[MP] Plan revertido a Free para usuario_id={usuario_id} ({razon})")
+
+
+# ---------------------------------------------------------------------------
+# Rutas de pagos (mismo prefijo que antes para no romper el frontend)
+# ---------------------------------------------------------------------------
+
+@payments_router.post("/auth/subscribe")
+async def iniciar_suscripcion(plan: str, usuario: dict = Depends(get_usuario_actual)):
+    """
+    Crea un preapproval individual en MP con external_reference=usuario_id y devuelve init_point.
+    Guarda el preapproval_id en DB ANTES de redirigir al usuario, de modo que el webhook
+    pueda identificarlo aunque llegue antes de que el usuario vuelva del checkout.
+    """
+    if plan not in PLAN_IDS:
+        raise HTTPException(status_code=400, detail=f"Plan '{plan}' no válido para suscripción.")
+    if plan == usuario.get("plan"):
+        raise HTTPException(status_code=400, detail="Ya tenés este plan activo.")
+
+    try:
+        result = crear_preapproval_usuario(usuario["id"], usuario["email"], plan)
+    except (ValueError, RuntimeError) as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+    # Guardar preapproval_id en DB AHORA — antes de que el usuario pague
+    # Garantiza que el webhook encuentre al usuario por mp_preapproval_id
+    with get_db() as conn:
+        cur = _cursor(conn)
+        cur.execute(
+            f"UPDATE usuarios SET plan_pendiente={PL}, mp_preapproval_id={PL} WHERE id={PL}",
+            (plan, result["preapproval_id"], usuario["id"]),
+        )
+
+    return {"init_point": result["init_point"]}
+
+
+@payments_router.post("/auth/mp-confirm")
+async def mp_confirm(preapproval_id: str, usuario: dict = Depends(get_usuario_actual)):
+    """
+    El frontend llama este endpoint cuando MP redirige con ?preapproval_id=XXX.
+    - Si el pago ya está autorizado → activa el plan inmediatamente.
+    - Si está pendiente → guarda el preapproval_id para que el webhook active después.
+    En ambos casos guarda la relación usuario ↔ preapproval_id en la DB.
+    """
+    resp = requests.get(
+        f"{MP_API}/preapproval/{preapproval_id}",
+        headers=_headers(),
+        timeout=15,
+    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=400,
+                            detail="No se pudo verificar la suscripción en Mercado Pago.")
+
+    sub        = resp.json()
+    status     = sub.get("status", "")
+    plan_id_mp = sub.get("preapproval_plan_id", "")
+    plan       = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
+
+    # Fallback: si la suscripción no tiene plan_id (auto_recurring sin plan),
+    # usar el plan_pendiente guardado en DB para este usuario
+    if not plan:
+        plan = usuario.get("plan_pendiente")
+    if not plan or plan not in PLAN_IDS:
+        raise HTTPException(status_code=400,
+                            detail="No se reconoce el plan de la suscripción.")
+
+    with get_db() as conn:
+        cur = _cursor(conn)
+        if status == "authorized":
+            _activar_plan_en_db(cur, usuario["id"], plan, preapproval_id)
+            log.info(f"[MP] mp-confirm: plan {plan} activado para usuario_id={usuario['id']}")
+            return {"ok": True, "plan": plan, "activado": True}
+        else:
+            # Guardar relación usuario ↔ preapproval_id para que el webhook active después
+            cur.execute(
+                f"UPDATE usuarios SET mp_preapproval_id={PL}, plan_pendiente={PL} WHERE id={PL}",
+                (preapproval_id, plan, usuario["id"]),
+            )
+            log.info(f"[MP] mp-confirm: preapproval_id guardado para usuario_id={usuario['id']} "
+                     f"status={status!r} — webhook activará el plan")
+            return {"ok": True, "plan": plan, "activado": False,
+                    "mensaje": "Pago en proceso. Tu plan se activará automáticamente en breve."}
+
+
+@payments_router.post("/auth/cancel-subscription")
+async def cancelar_suscripcion_usuario(usuario: dict = Depends(get_usuario_actual)):
+    """Cancela la suscripción activa del usuario en MP y lo baja a Free."""
+    preapproval_id = usuario.get("mp_preapproval_id")
+    if not preapproval_id:
+        raise HTTPException(status_code=400,
+                            detail="No tenés una suscripción activa en MP.")
+
+    cancelar_suscripcion(preapproval_id)
+
+    with get_db() as conn:
+        cur = _cursor(conn)
+        cur.execute(
+            f"UPDATE usuarios SET plan='Free', limite_mensual=5, "
+            f"mp_preapproval_id=NULL, plan_pendiente=NULL WHERE id={PL}",
+            (usuario["id"],),
+        )
+    return {"ok": True, "message": "Suscripción cancelada. Tu plan volvió a Free."}
+
+
+@payments_router.post("/webhooks/mp")
+async def webhook_mp(
+    request:      Request,
+    x_signature:  str = Header(default="", alias="x-signature"),
+    x_request_id: str = Header(default="", alias="x-request-id"),
+):
+    """
+    Webhook de MP para suscripciones (preapproval).
+    Identifica al usuario con esta prioridad:
+      1. external_reference (usuario_id guardado al crear el preapproval)
+      2. mp_preapproval_id  (guardado en DB cuando el usuario inició la suscripción)
+      3. payer_email        (fallback final, requiere que el email coincida)
+    """
+    body    = await request.json()
+    data_id = (body.get("data") or {}).get("id", "")
+
+    log.info(f"[MP Webhook] type={body.get('type')} action={body.get('action')} "
+             f"data_id={data_id}")
+
+    if x_signature and not validar_firma_webhook(x_signature, x_request_id, data_id):
+        log.warning(f"[MP Webhook] Firma inválida — descartado. data_id={data_id}")
+        raise HTTPException(status_code=401, detail="Firma inválida.")
+
+    tipo = body.get("type")
+
+    # subscription_authorized_payment: cobro mensual procesado
+    if tipo == "subscription_authorized_payment":
+        return await _handle_authorized_payment(data_id)
+
+    # payment.created: pago aprobado — cubre casos donde subscription_preapproval no llega
+    if tipo == "payment":
+        return await _handle_payment_created(data_id)
+
+    if tipo != "subscription_preapproval":
+        return {"ok": True, "skipped": True}
+
+    if not data_id:
+        return {"ok": True, "skipped": True}
+
+    try:
+        sub = obtener_suscripcion(data_id)
+    except Exception as e:
+        log.error(f"[MP Webhook] Error consultando suscripcion {data_id}: {e}")
+        # Devolver 200 para que MP no reintente indefinidamente
+        return {"ok": True, "skipped": True}
+
+    if not sub:
+        # ID no encontrado en MP (ej: evento de prueba con ID ficticio)
+        log.info(f"[MP Webhook] preapproval {data_id} no existe en MP — ignorado.")
+        return {"ok": True, "skipped": True}
+
+    estado         = sub.get("status")
+    preapproval_id = sub.get("id", data_id)
+    plan_id_mp     = sub.get("preapproval_plan_id", "")
+    external_ref   = sub.get("external_reference", "")
+    payer_email    = (sub.get("payer") or {}).get("email", "")
+
+    log.info(f"[MP Webhook] preapproval_id={preapproval_id} estado={estado} "
+             f"external_ref={external_ref!r} payer={payer_email} plan_id={plan_id_mp}")
+
+    # Identificar plan: primero por preapproval_plan_id, luego por plan_pendiente en DB
+    plan_por_id = next((k for k, v in PLAN_IDS.items() if v == plan_id_mp), None)
+
+    with get_db() as conn:
+        cur = _cursor(conn)
+
+        # 1. Identificar usuario por external_reference (más confiable — siempre presente)
+        usuario_id = None
+        if external_ref and external_ref.isdigit():
+            cur.execute(f"SELECT id FROM usuarios WHERE id={PL}", (int(external_ref),))
+            row = cur.fetchone()
+            if row:
+                usuario_id = int(external_ref)
+                log.info(f"[MP Webhook] Usuario encontrado por external_reference={external_ref}")
+
+        # 2. Por mp_preapproval_id (guardado en DB al iniciar la suscripción)
+        if not usuario_id:
+            cur.execute(f"SELECT id FROM usuarios WHERE mp_preapproval_id={PL}", (preapproval_id,))
+            row = cur.fetchone()
+            if row:
+                usuario_id = row["id"] if isinstance(row, dict) else row[0]
+                log.info(f"[MP Webhook] Usuario encontrado por mp_preapproval_id={preapproval_id}")
+
+        # 3. Por email del pagador (fallback)
+        if not usuario_id and payer_email:
+            cur.execute(f"SELECT id FROM usuarios WHERE email={PL}", (payer_email,))
+            row = cur.fetchone()
+            if row:
+                usuario_id = row["id"] if isinstance(row, dict) else row[0]
+                log.info(f"[MP Webhook] Usuario encontrado por payer_email={payer_email}")
+
+        if not usuario_id:
+            log.error(f"[MP Webhook] No se pudo identificar usuario para "
+                      f"preapproval_id={preapproval_id} — ignorado.")
+            return {"ok": True, "skipped": True}
+
+        # Identificar plan: por plan_id de MP, o por plan_pendiente en DB
+        plan = plan_por_id
+        if not plan:
+            cur.execute(f"SELECT plan_pendiente FROM usuarios WHERE id={PL}", (usuario_id,))
+            urow = cur.fetchone()
+            plan = (urow["plan_pendiente"] if isinstance(urow, dict) else urow[0]) if urow else None
+            if plan:
+                log.info(f"[MP Webhook] Plan identificado por plan_pendiente={plan!r}")
+        if not plan:
+            log.error(f"[MP Webhook] No se pudo identificar plan para usuario_id={usuario_id}")
+            return {"ok": True, "skipped": True}
+
+        if estado == "authorized":
+            _activar_plan_en_db(cur, usuario_id, plan, preapproval_id)
+
+        elif estado in ("cancelled", "paused"):
+            _bajar_a_free_en_db(cur, usuario_id, f"MP estado={estado}")
+
+        else:
+            log.info(f"[MP Webhook] Estado {estado!r} para usuario_id={usuario_id} — sin acción.")
+
+    return {"ok": True}

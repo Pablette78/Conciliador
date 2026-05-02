@@ -159,6 +159,7 @@ def init_db() -> None:
                 ("reset_token",                  "TEXT"),
                 ("plan_pendiente",               "TEXT"),
                 ("token_aprobacion_suscripcion", "TEXT"),
+                ("mp_preapproval_id",            "TEXT"),
             ]:
                 try:
                     cur.execute(f"ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS {col} {typedef}")
@@ -190,6 +191,7 @@ def init_db() -> None:
                 ("reset_token",                  "TEXT"),
                 ("plan_pendiente",               "TEXT"),
                 ("token_aprobacion_suscripcion", "TEXT"),
+                ("mp_preapproval_id",            "TEXT"),
             ]:
                 try:
                     cur.execute(f"ALTER TABLE usuarios ADD COLUMN {col} {typedef}")
@@ -456,9 +458,42 @@ async def eliminar_usuario(username: str, admin: dict = Depends(require_admin)):
     return {"ok": True}
 
 
+@router.post("/usuarios/{username}/reset-test", dependencies=[Depends(require_admin)])
+async def reset_usuario_para_test(username: str, plan: str = "Individual"):
+    """
+    Resetea un usuario a estado pre-verificación para poder repetir el flujo
+    de registro → email → MP sin borrarlo ni crear uno nuevo.
+    Solo accesible por admin.
+    """
+    nuevo_token = str(uuid.uuid4())
+    with get_db() as conn:
+        cur = _cursor(conn)
+        cur.execute(f"SELECT id FROM usuarios WHERE username={PL}", (username,))
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Usuario no encontrado.")
+        cur.execute(
+            f"UPDATE usuarios SET "
+            f"activo=0, email_verificado=0, verificacion_token={PL}, "
+            f"plan='Free', limite_mensual=5, plan_pendiente={PL}, "
+            f"mp_preapproval_id=NULL, token_aprobacion_suscripcion=NULL "
+            f"WHERE username={PL}",
+            (nuevo_token, plan, username),
+        )
+    return {
+        "ok": True,
+        "username": username,
+        "plan_pendiente": plan,
+        "verificacion_url": f"/auth/verificar?token={nuevo_token}",
+        "token": nuevo_token,
+    }
+
+
 # --- Verificacion de Email ---
 @router.get("/verificar")
 async def verificar_email(token: str):
+    from payments import crear_preapproval_usuario, PLAN_IDS
+    from fastapi.responses import RedirectResponse
+
     with get_db() as conn:
         cur = _cursor(conn)
         cur.execute(f"SELECT * FROM usuarios WHERE verificacion_token={PL}", (token,))
@@ -468,44 +503,64 @@ async def verificar_email(token: str):
 
         plan_pendiente = row.get("plan_pendiente")
 
-        # Marcar email como verificado
+        # Marcar email como verificado y activar
         cur.execute(
-            f"UPDATE usuarios SET email_verificado=1, verificacion_token=NULL WHERE verificacion_token={PL}",
-            (token,)
+            f"UPDATE usuarios SET email_verificado=1, verificacion_token=NULL, activo=1 WHERE id={PL}",
+            (row["id"],)
         )
 
-        # Si plan Free → activar directamente
-        if not plan_pendiente:
-            cur.execute(f"UPDATE usuarios SET activo=1 WHERE id={PL}", (row["id"],))
-            msg_extra = "Ya podes iniciar sesion."
-            is_free = True
-        else:
-            # Plan pago → notificar a Pablo, mantener activo=0
-            email_usuario = row.get("email") or row["username"]
-            enviar_notificacion_upgrade(
-                row["username"], email_usuario,
-                plan_pendiente, row["token_aprobacion_suscripcion"]
-            )
-            msg_extra = f"Tu solicitud de plan <b>{plan_pendiente}</b> esta siendo procesada. Te avisaremos por email cuando este lista."
-            is_free = False
+    # Plan Free → mostrar pantalla de éxito con link a la app
+    if not plan_pendiente or plan_pendiente not in PLAN_IDS:
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html lang="es">
+        <head><meta charset="UTF-8"><title>ContaFlex</title>
+        <style>body{{font-family:Arial,sans-serif;background:#0a0e1a;color:#f1f5f9;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}}
+        .box{{background:#141c2e;border:1px solid #1e293b;border-radius:12px;padding:48px;max-width:480px;text-align:center;}}
+        h2{{color:#10b981;}}
+        .btn{{display:inline-block;margin-top:24px;padding:14px 28px;background:#3b82f6;color:white;text-decoration:none;border-radius:8px;font-weight:bold;}}</style>
+        </head>
+        <body><div class="box">
+          <h2>¡Email verificado!</h2>
+          <p>Ya podés iniciar sesión en ContaFlex.</p>
+          <a href="{FRONTEND_URL}" class="btn">Ir a ContaFlex</a>
+        </div></body></html>
+        """)
 
-    color  = "#10b981" if is_free else "#f59e0b"
-    titulo = "Email verificado!" if is_free else "Email verificado — Pendiente de aprobacion"
-    return HTMLResponse(f"""
-    <!DOCTYPE html>
-    <html lang="es">
-    <head><meta charset="UTF-8"><title>ContaFlex</title>
-    <style>body{{font-family:Arial,sans-serif;background:#0a0e1a;color:#f1f5f9;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}}
-    .box{{background:#141c2e;border:1px solid #1e293b;border-radius:12px;padding:48px;max-width:480px;text-align:center;}}
-    h2{{color:{color};}}a{{color:#60a5fa;}}
-    .btn{{display:inline-block;margin-top:24px;padding:14px 28px;background:#3b82f6;color:white;text-decoration:none;border-radius:8px;font-weight:bold;}}</style>
-    </head>
-    <body><div class="box">
-      <h2>{titulo}</h2>
-      <p>{msg_extra}</p>
-      <a href="{FRONTEND_URL}" class="btn">Ir a ContaFlex</a>
-    </div></body></html>
-    """)
+    # Plan pago → crear preapproval individual y redirigir al checkout de MP
+    try:
+        result = crear_preapproval_usuario(row["id"], row.get("email", ""), plan_pendiente)
+        init_point    = result["init_point"]
+
+        # Guardar preapproval_id en DB para que el webhook pueda identificar al usuario
+        with get_db() as conn2:
+            cur2 = _cursor(conn2)
+            cur2.execute(
+                f"UPDATE usuarios SET mp_preapproval_id={PL} WHERE id={PL}",
+                (result["preapproval_id"], row["id"]),
+            )
+
+        return RedirectResponse(url=init_point, status_code=302)
+
+    except Exception as e:
+        # Si falla MP, mostramos página con botón manual
+        return HTMLResponse(f"""
+        <!DOCTYPE html>
+        <html lang="es">
+        <head><meta charset="UTF-8"><title>ContaFlex</title>
+        <style>body{{font-family:Arial,sans-serif;background:#0a0e1a;color:#f1f5f9;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;}}
+        .box{{background:#141c2e;border:1px solid #1e293b;border-radius:12px;padding:48px;max-width:480px;text-align:center;}}
+        h2{{color:#f59e0b;}}
+        .btn{{display:inline-block;margin-top:24px;padding:14px 28px;background:#3b82f6;color:white;text-decoration:none;border-radius:8px;font-weight:bold;margin-right:8px;}}
+        .btn2{{display:inline-block;margin-top:24px;padding:14px 28px;background:#10b981;color:white;text-decoration:none;border-radius:8px;font-weight:bold;}}</style>
+        </head>
+        <body><div class="box">
+          <h2>Email verificado ✓</h2>
+          <p>Tu cuenta está activa. Hubo un problema al conectar con Mercado Pago ({type(e).__name__}).</p>
+          <p>Podés completar la suscripción al plan <b>{plan_pendiente}</b> desde tu perfil en la app.</p>
+          <a href="{FRONTEND_URL}" class="btn2">Ir a ContaFlex</a>
+        </div></body></html>
+        """)
 
 
 # --- Upgrade de plan (usuarios ya activos) ---

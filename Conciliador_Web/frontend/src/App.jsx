@@ -83,6 +83,25 @@ export default function App() {
     }
   }, []);
 
+  // Confirmar pago de Mercado Pago cuando vuelve del checkout
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const preapprovalId = params.get('preapproval_id');
+    if (preapprovalId && token) {
+      window.history.replaceState({}, document.title, '/');
+      api.post(`/auth/mp-confirm?preapproval_id=${preapprovalId}`)
+        .then(res => {
+          if (res.data?.ok) {
+            alert(`✅ ¡Suscripción activada! Plan ${res.data.plan} habilitado.`);
+            cargarUsuario();
+          }
+        })
+        .catch(err => {
+          alert(err.response?.data?.detail || 'El pago está siendo procesado. Si ya pagaste, tu plan se activará en breve.');
+        });
+    }
+  }, [token]);
+
   const cargarUsuario = useCallback(async () => {
     try {
       const r = await api.get('/auth/me')
@@ -689,14 +708,17 @@ function PanelPerfil({ usuario, setUsuario, onLogout }) {
                   key={p}
                   onClick={async () => {
                     if (esActual || esPendiente || esInferior) return;
-                    if (!confirm(`¿Solicitar cambio al plan ${p}? Se enviará una notificación para aprobación.`)) return;
+                    if (p === 'Free') return;
+                    if (!confirm(`¿Suscribirte al plan ${p}? Serás redirigido a Mercado Pago para completar el pago.`)) return;
                     try {
-                      await api.post(`/auth/upgrade?plan_solicitado=${p}`);
-                      const me = await api.get('/auth/me');
-                      setUsuario(me.data);
-                      alert(`Solicitud enviada para plan ${p}. Te avisaremos por mail.`);
+                      const res = await api.post(`/auth/subscribe?plan=${p}`);
+                      if (res.data?.init_point) {
+                        window.location.href = res.data.init_point;
+                      } else {
+                        alert("No se pudo obtener el link de pago. Intentá de nuevo.");
+                      }
                     } catch (err) {
-                      alert(err.response?.data?.detail || "Error al solicitar plan.");
+                      alert(err.response?.data?.detail || "Error al iniciar la suscripción.");
                     }
                   }}
                   disabled={esActual || esPendiente || esInferior}
@@ -707,7 +729,7 @@ function PanelPerfil({ usuario, setUsuario, onLogout }) {
                     'bg-white/5 border border-white/10 hover:border-brand-blue hover:text-brand-blue'
                   }`}
                 >
-                  {p.toUpperCase()} {esActual && '✓'}
+                  {p.toUpperCase()} {esActual ? '✓' : p !== 'Free' ? (p === 'Individual' ? '· $14.900/mes' : '· $32.500/mes') : ''}
                 </button>
               );
             })}

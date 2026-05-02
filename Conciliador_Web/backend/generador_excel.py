@@ -82,6 +82,7 @@ def _crear_auditoria_sistema(wb, movs_sist, mes_anio):
 def _crear_detalle_impuestos(wb, resultado, mes_anio):
     ws = wb.create_sheet(SH_IMP)
     ws['A1'] = f'GASTOS E IMPUESTOS - {mes_anio}'; ws['A1'].font = Font(bold=True, size=14)
+    ws.sheet_properties.outlinePr.summaryBelow = True
     r = 3; rows_sub = []
     for cat, datos in sorted(resultado.gastos_por_categoria.items()):
         if not datos['items']: continue
@@ -91,7 +92,8 @@ def _crear_detalle_impuestos(wb, resultado, mes_anio):
         start = r
         for m in sorted(datos['items'], key=lambda x: x.fecha):
             ws.cell(row=r, column=1, value=m.fecha).number_format = DTF; ws.cell(row=r, column=2, value=m.concepto)
-            ws.cell(row=r, column=4, value=m.debito or m.credito).number_format = MF; _sf(ws, r, 4, DF); r += 1
+            ws.cell(row=r, column=4, value=m.debito or m.credito).number_format = MF; _sf(ws, r, 4, DF)
+            ws.row_dimensions[r].outline_level = 1; r += 1
         ws.cell(row=r, column=3, value='SUBTOTAL'); ws.cell(row=r, column=4, value=f'=SUM(D{start}:D{r-1})').number_format = MF; rows_sub.append(r); r += 2
     ws.cell(row=r, column=1, value='TOTAL GENERAL'); ws.cell(row=r, column=4, value=('=' + '+'.join(f'D{s}' for s in rows_sub)) if rows_sub else 0).number_format = MF
     row_tot = r
@@ -116,7 +118,13 @@ def _crear_conciliacion(wb, resultado, mes_anio):
         ws.cell(row=r, column=10, value=it.estado); ws.cell(row=r, column=11, value=f'=+B{r}-G{r}-C{r}+F{r}').number_format = MF
         _sf(ws, r, 11, DF, VERDE if it.estado == 'CONCILIADO' else ROJO); r += 1
     row_fin = r - 1
-    r += 1; row_sb = None
+    # TOTALES conciliados (Déb Bco / Cré Bco / Debe Sist / Haber Sist)
+    ws.cell(row=r, column=1, value='TOTALES CONCILIADOS')
+    ws.cell(row=r, column=2, value=f'=SUM(B{row_ini}:B{row_fin})').number_format = MF
+    ws.cell(row=r, column=3, value=f'=SUM(C{row_ini}:C{row_fin})').number_format = MF
+    ws.cell(row=r, column=6, value=f'=SUM(F{row_ini}:F{row_fin})').number_format = MF
+    ws.cell(row=r, column=7, value=f'=SUM(G{row_ini}:G{row_fin})').number_format = MF
+    _sf(ws, r, 11, TF, VERDE_TOTAL); r += 2; row_sb = None
     if resultado.solo_banco:
         ws.cell(row=r, column=1, value='SOLO EN BANCO'); r += 1
         _h(ws, r, ['Fecha', 'Concepto', 'Tipo', 'Débito', 'Crédito']); r += 1
@@ -126,7 +134,11 @@ def _crear_conciliacion(wb, resultado, mes_anio):
             if m.debito: ws.cell(row=r, column=4, value=m.debito).number_format = MF
             if m.credito: ws.cell(row=r, column=5, value=m.credito).number_format = MF
             _sf(ws, r, 5, DF, NARANJA); r += 1
-        row_sb = r; r += 1
+        # TOTALES solo banco (Débito / Crédito)
+        ws.cell(row=r, column=1, value='TOTALES')
+        ws.cell(row=r, column=4, value=f'=SUM(D{start}:D{r-1})').number_format = MF
+        ws.cell(row=r, column=5, value=f'=SUM(E{start}:E{r-1})').number_format = MF
+        _sf(ws, r, 5, TF, VERDE_TOTAL); row_sb = r; r += 1
     r += 1; row_ss = None
     if resultado.solo_sistema:
         ws.cell(row=r, column=1, value='SOLO EN SISTEMA'); r += 1
@@ -137,7 +149,11 @@ def _crear_conciliacion(wb, resultado, mes_anio):
             if m.debito: ws.cell(row=r, column=4, value=m.debito).number_format = MF
             if m.credito: ws.cell(row=r, column=5, value=m.credito).number_format = MF
             _sf(ws, r, 5, DF, NARANJA); r += 1
-        row_ss = r; r += 1
+        # TOTALES solo sistema (Debe / Haber)
+        ws.cell(row=r, column=1, value='TOTALES')
+        ws.cell(row=r, column=4, value=f'=SUM(D{start}:D{r-1})').number_format = MF
+        ws.cell(row=r, column=5, value=f'=SUM(E{start}:E{r-1})').number_format = MF
+        _sf(ws, r, 5, TF, VERDE_TOTAL); row_ss = r; r += 1
     return {'row_ini': row_ini, 'row_fin': row_fin, 'row_sb': row_sb, 'row_ss': row_ss}
 
 def _llenar_resumen_clean(ws, resultado, datos_banco, mes_anio, rb, rs, ri, rc):
@@ -166,7 +182,7 @@ def _llenar_resumen_clean(ws, resultado, datos_banco, mes_anio, rb, rs, ri, rc):
     
     col_d, col_e = 4, 5
     r_v = 3; ws.merge_cells(start_row=r_v, start_column=col_d, end_row=r_v, end_column=7); cl = ws.cell(row=r_v, column=col_d, value='VERIFICACIÓN PDF'); cl.fill = AZUL_HEADER; cl.font = TFW; cl.alignment = CA
-    for i, (l, f) in enumerate([('Inicio', f"=+'{SH_BANCO}'!D{rb['row_saldo_ini']}"), ('Créditos (+)', f"=+'{SH_BANCO}'!D{rb['row_totales']}"), ('Débitos (-)', f"=+'{SH_BANCO}'!C{rb['row_totales']}"), ('Calculado', '=+E5+E6-E7'), ('Real PDF', f"=+'{SH_BANCO}'!D{rb['row_saldo_fin']}"), ('Dif.', '=+E8-E9')]):
+    for i, (l, f) in enumerate([('Inicio', f"=+'{SH_BANCO}'!D{rb['row_saldo_ini']}"), ('Créditos (+)', f"=+'{SH_BANCO}'!D{rb['row_totales']}"), ('Débitos (-)', f"=+'{SH_BANCO}'!C{rb['row_totales']}"), ('Calculado', '=+E4+E5-E6'), ('Real PDF', f"=+'{SH_BANCO}'!D{rb['row_saldo_fin']}"), ('Dif.', '=+E8-E7')]):
         row_v = 4 + i; ws.cell(row=row_v, column=col_d, value=l).border = BD
         ws.merge_cells(start_row=row_v, start_column=col_e, end_row=row_v, end_column=6)
         cc = ws.cell(row=row_v, column=col_e, value=f); cc.number_format = MF; cc.border = BD
