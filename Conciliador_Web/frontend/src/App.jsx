@@ -324,7 +324,7 @@ export default function App() {
       {/* Sidebar */}
       <aside className="w-68 glass-sidebar flex flex-col z-30 shadow-2xl">
         <div className="p-8 flex items-center space-x-4 mb-8 animate-fade-in">
-          <img src="/logo.svg" alt="ContaFlex Logo" className="w-10 h-10 object-contain drop-shadow-[0_0_8px_rgba(59,130,246,0.2)]" />
+          <img src="/logo.png" alt="ContaFlex Logo" className="w-10 h-10 object-contain drop-shadow-[0_0_8px_rgba(59,130,246,0.2)]" />
           <span className="text-xl font-extrabold tracking-tight">
             Conta<span className="text-brand-blue">Flex</span>
           </span>

@@ -56,7 +56,7 @@ export default function LandingPage({ onLogin, onRegister, onGoogleLogin, authEr
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-between px-6 md:px-12 h-[68px] bg-[#0a0e1a]/85 backdrop-blur-xl border-b border-white/5">
         <div className="flex items-center space-x-3 select-none">
-          <img src="/logo.svg" alt="ContaFlex Logo" className="w-8 h-8 object-contain" />
+          <img src="/logo.png" alt="ContaFlex Logo" className="w-8 h-8 object-contain" />
           <div className="font-mono text-xl font-medium tracking-tight">
             Conta<span className="text-[#60a5fa]">Flex</span>
           </div>
@@ -365,7 +365,7 @@ export default function LandingPage({ onLogin, onRegister, onGoogleLogin, authEr
       {/* CTA Footer */}
       <footer className="border-t border-white/5 py-12 px-6 flex flex-col md:flex-row justify-between items-center gap-6 max-w-6xl mx-auto">
         <div className="flex items-center space-x-2 select-none">
-          <img src="/logo.svg" alt="ContaFlex Logo" className="w-6 h-6 object-contain" />
+          <img src="/logo.png" alt="ContaFlex Logo" className="w-6 h-6 object-contain" />
           <div className="font-mono text-lg font-medium">Conta<span>Flex</span></div>
         </div>
         <p className="text-xs text-[#94a3b8]">© 2025 ContaFlex. Hecho en Argentina 🇦🇷</p>
