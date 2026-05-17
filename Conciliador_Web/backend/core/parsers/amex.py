@@ -86,8 +86,9 @@ class AmexParser(BaseParser):
             if "DOLARES" in linea_str or "Importe en U$S" in linea_str:
                 en_bloque_pesos = False
                 en_bloque_dolares = True
+                continue
 
-            if not en_bloque_pesos:
+            if not en_bloque_pesos and not en_bloque_dolares:
                 continue
             
             # Extraer fecha
@@ -137,6 +138,9 @@ class AmexParser(BaseParser):
                 # Limpiar la fecha del concepto
                 concepto = self.PAT_FECHA_MES.sub('', concepto).strip()
                 
+                if en_bloque_dolares:
+                    concepto = concepto + " [USD]"
+
                 # Reseteamos una flag para saber si el movimiento ya cargó su referencia
                 mov_completo = False
                 
@@ -195,8 +199,10 @@ class AmexParser(BaseParser):
         # ---------------------------------------------------------------------
         suma_gastos = sum(m.debito for m in movimientos)
         # Si la suma de gastos detectados coincide con el Saldo a Pagar (o Total de Cargos en PESOS),
-        # significa que levantamos estrictamente TODO el PDF al centavo.
-        es_perfecto = (round(suma_gastos, 2) == round(saldo_final, 2))
+        # EXCEPCIÓN: la suma_gastos va a sumar dólares y pesos.
+        # Solo verificamos validez si no hubo dólares procesados para no fallar
+        hay_dolares = any("[USD]" in m.concepto for m in movimientos)
+        es_perfecto = (round(suma_gastos, 2) == round(saldo_final, 2)) if not hay_dolares else False
         
         return DatosExtracto(
             banco=f"American Express{' (Validez Verificada)' if es_perfecto else ''}",

@@ -86,7 +86,7 @@ class VisaParser(BaseParser):
                 p1 = partes[-1].strip()
                 p2 = partes[-2].strip()
                 
-                ars_str = ""
+                montos_procesar = []
                 concepto_crudo = ""
                 
                 es_p1_monto = bool(self.PAT_MONTO.match(p1))
@@ -94,23 +94,24 @@ class VisaParser(BaseParser):
                 
                 if es_p1_monto and es_p2_monto:
                     # Trae ARS y USD
-                    ars_str = p2
+                    montos_procesar.append((p2, False))
+                    montos_procesar.append((p1, True))
                     concepto_crudo = " ".join(partes[:-2]).strip()
                 elif es_p1_monto:
                     # Trae un solo monto, hay que distinguir si es Pesos o Dolares
                     idx = linea_str.rfind(p1)
-                    if "USD" in " ".join(partes[:-1]).upper() or "U$S" in " ".join(partes[:-1]).upper() or "BRL" in " ".join(partes[:-1]).upper():
-                        # Es dolar, lo ignoramos
-                        continue
-                    if idx > 65: # La columna de USD suele estar a la derecha del carácter 65.
-                        # Es dólar
-                        continue
-                    else:
-                        ars_str = p1
-                        concepto_crudo = " ".join(partes[:-1]).strip()
+                    txt_antes = " ".join(partes[:-1]).upper()
+                    es_dolar = False
+                    if "USD" in txt_antes or "U$S" in txt_antes or "BRL" in txt_antes:
+                        es_dolar = True
+                    elif idx > 65: # La columna de USD suele estar a la derecha del carácter 65.
+                        es_dolar = True
+                    
+                    montos_procesar.append((p1, es_dolar))
+                    concepto_crudo = " ".join(partes[:-1]).strip()
                         
-                if ars_str:
-                    ars_val = self.limpiar_monto(ars_str)
+                for m_str, es_dolar in montos_procesar:
+                    ars_val = self.limpiar_monto(m_str)
                     if ars_val == 0.0:
                         continue
 
@@ -121,9 +122,12 @@ class VisaParser(BaseParser):
                     # Limpiar concepto: quitar fecha y ticket
                     concepto_limpio = re.sub(r'^(?:\d{2}\s+[A-Za-z\.]+\s+)?(?:\d{2}\.\d{2}\.\d{2}|\d{2})\s+', '', concepto_crudo)
                     concepto_limpio = re.sub(r'^\d{4,}\s*\*?\s*', '', concepto_limpio)
+                    
+                    if es_dolar:
+                        concepto_limpio += " [USD]"
 
                     es_pago = False
-                    if "PAGO " in concepto_limpio.upper() or "PAYMENT" in concepto_limpio.upper() or "BONIF" in concepto_limpio.upper() or "-" in ars_str:
+                    if "PAGO " in concepto_limpio.upper() or "PAYMENT" in concepto_limpio.upper() or "BONIF" in concepto_limpio.upper() or "-" in m_str:
                         es_pago = True
 
                     ars_val = abs(ars_val)
@@ -141,8 +145,8 @@ class VisaParser(BaseParser):
                     movimientos.append(mov)
 
         # Validación matemática de cierre
-        suma_gastos = sum(m.debito for m in movimientos)
-        suma_pagos = sum(m.credito for m in movimientos)
+        suma_gastos = sum(m.debito for m in movimientos if "[USD]" not in m.concepto)
+        suma_pagos = sum(m.credito for m in movimientos if "[USD]" not in m.concepto)
         es_perfecto = False
         if saldo_final > 0.0:
             calculo = saldo_anterior + suma_gastos - suma_pagos
