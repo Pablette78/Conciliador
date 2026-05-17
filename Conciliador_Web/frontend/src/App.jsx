@@ -334,6 +334,7 @@ export default function App() {
         <nav className="flex-1 px-4 space-y-2">
           <SidebarLink active={view === 'dashboard'} icon={<LayoutDashboard size={20}/>} label="Dashboard" onClick={() => setView('dashboard')} />
           <SidebarLink active={view === 'perfil'} icon={<User size={20}/>} label="Mi Perfil" onClick={() => setView('perfil')} />
+          <SidebarLink active={view === 'guias'} icon={<FileText size={20}/>} label="Guía de Formatos" onClick={() => setView('guias')} />
           {esAdmin && (
             <SidebarLink active={view === 'usuarios'} icon={<Users size={20}/>} label="Usuarios" onClick={() => setView('usuarios')} />
           )}
@@ -407,6 +408,9 @@ export default function App() {
           )}
           {view === 'perfil' && (
             <PanelPerfil usuario={usuario} setUsuario={setUsuario} onLogout={handleLogout} />
+          )}
+          {view === 'guias' && (
+            <PanelGuias />
           )}
           {view === 'usuarios' && esAdmin && (
             <PanelUsuarios usuario={usuario} />
@@ -860,6 +864,122 @@ function PlaceholderPage({ title, onBack }) {
       <h2 className="text-3xl font-black">{title}</h2>
       <p className="text-slate-400">Esta sección está en mantenimiento.</p>
       <button onClick={onBack} className="bg-brand-blue text-white px-8 py-3 rounded-2xl font-black text-xs">VOLVER</button>
+    </div>
+  )
+}
+
+function PanelGuias() {
+  return (
+    <div className="max-w-4xl mx-auto space-y-8 animate-fade-in">
+      <div>
+        <h2 className="text-4xl font-black tracking-tight mb-2">Guía de Formatos y Archivos</h2>
+        <p className="text-slate-400 font-medium">Requisitos y estructuras recomendadas para importar tus planillas.</p>
+      </div>
+
+      <div className="card-premium p-10 space-y-8">
+        <div className="flex items-center space-x-4 border-b border-white/5 pb-6">
+          <div className="bg-brand-blue/10 p-3 rounded-2xl border border-brand-blue/20 text-brand-blue">
+            <FileText size={24} />
+          </div>
+          <div>
+            <h3 className="font-black text-xl">1. Mayores Contables y Extractos en Excel</h3>
+            <p className="text-xs text-slate-500">Procesamiento inteligente de archivos (.xls, .xlsx, .xlsm)</p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-sm">
+          <div className="space-y-4">
+            <h4 className="font-bold text-slate-300">Pestañas del Archivo</h4>
+            <ul className="space-y-3">
+              <li className="flex items-start gap-2">
+                <span className="text-brand-blue font-bold">✓</span>
+                <span className="text-slate-400"><strong className="text-white">Detección Automática:</strong> El sistema analiza las primeras 5 pestañas de tu archivo para buscar palabras clave como Fecha, Debe, Haber o Documento.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-brand-blue font-bold">✓</span>
+                <span className="text-slate-400"><strong className="text-white">Recomendación:</strong> Se aconseja dejar únicamente la pestaña del Mayor como primera hoja del libro para evitar cruzamientos erróneos.</span>
+              </li>
+            </ul>
+          </div>
+          <div className="space-y-4">
+            <h4 className="font-bold text-slate-300">Filas Ignoradas</h4>
+            <ul className="space-y-3">
+              <li className="flex items-start gap-2">
+                <span className="text-rose-500 font-bold">✗</span>
+                <span className="text-slate-400">Filas que no contengan fechas válidas.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-rose-500 font-bold">✗</span>
+                <span className="text-slate-400">Filas donde tanto el Debe como el Haber estén en $0 o vacíos.</span>
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="text-rose-500 font-bold">✗</span>
+                <span className="text-slate-400">Filas que hagan referencia a "SALDO INICIAL".</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+
+        <div className="pt-6 border-t border-white/5 space-y-4">
+          <h4 className="font-black text-slate-300 text-sm">Nombres de Columnas Aceptados (Case Insensitive)</h4>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs font-medium">
+            <div className="bg-brand-dark/50 border border-white/5 rounded-2xl p-4 space-y-2">
+              <span className="text-brand-blue font-black tracking-widest block uppercase text-[10px]">Fecha (Obligatoria)</span>
+              <p className="text-white font-bold">"Fecha"</p>
+              <p className="text-slate-500">Formatos fecha nativo de Excel o texto (DD/MM/AAAA, AAAA-MM-DD).</p>
+            </div>
+            <div className="bg-brand-dark/50 border border-white/5 rounded-2xl p-4 space-y-2">
+              <span className="text-emerald-400 font-black tracking-widest block uppercase text-[10px]">Entrada (Obligatoria)</span>
+              <p className="text-white font-bold">"Debe", "Ing.", "Ingreso", "Crédito"</p>
+              <p className="text-slate-500">Columna para fondos entrantes (Debe o Créditos).</p>
+            </div>
+            <div className="bg-brand-dark/50 border border-white/5 rounded-2xl p-4 space-y-2">
+              <span className="text-amber-500 font-black tracking-widest block uppercase text-[10px]">Salida (Obligatoria)</span>
+              <p className="text-white font-bold">"Haber", "Egr.", "Egreso", "Débito"</p>
+              <p className="text-slate-500">Columna para fondos salientes (Haber o Débitos).</p>
+            </div>
+          </div>
+          <div className="bg-slate-800/30 border border-white/5 rounded-2xl p-4 text-xs text-slate-400 space-y-1">
+            <p className="font-bold text-white uppercase tracking-wider text-[9px] mb-1">Columnas Opcionales para un Mejor Cruce:</p>
+            <p>· <strong className="text-white">Referencia:</strong> "Documento", "Doc", "Operación".</p>
+            <p>· <strong className="text-white">Concepto:</strong> "Descripción", "Cuenta", "Concepto", "Detalle".</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="card-premium p-10 space-y-6">
+        <div className="flex items-center space-x-4 border-b border-white/5 pb-6">
+          <div className="bg-emerald-500/10 p-3 rounded-2xl border border-emerald-500/20 text-emerald-400">
+            <FileText size={24} />
+          </div>
+          <div>
+            <h3 className="font-black text-xl">2. Extractos Bancarios en PDF</h3>
+            <p className="text-xs text-slate-500">Lectura de texto seleccionable nativo del Home Banking</p>
+          </div>
+        </div>
+
+        <ul className="space-y-4 text-sm text-slate-400">
+          <li className="flex items-start gap-3">
+            <span className="bg-brand-blue/10 text-brand-blue h-6 w-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">1</span>
+            <p><strong className="text-white">Descarga Oficial:</strong> Sube siempre el archivo original descargado de la plataforma del banco. No lo edites ni lo imprimas a PDF de nuevo.</p>
+          </li>
+          <li className="flex items-start gap-3">
+            <span className="bg-brand-blue/10 text-brand-blue h-6 w-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">2</span>
+            <p><strong className="text-white">Evita Escaneos o Fotos:</strong> El motor no realiza OCR de imágenes. Si el archivo fue escaneado o fotografiado, el sistema no detectará las transacciones.</p>
+          </li>
+          <li className="flex items-start gap-3">
+            <span className="bg-brand-blue/10 text-brand-blue h-6 w-6 rounded-full flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">3</span>
+            <p><strong className="text-white">Bancos Soportados:</strong> Contiene parsers optimizados para Santander, Galicia, BBVA, Bancor, Provincia, Nación, Credicoop, HSBC, ICBC, Macro, Patagonia, Supervielle, Ciudad, Comafi, Mis Retenciones (ARCA), American Express y Visa.</p>
+          </li>
+        </ul>
+      </div>
+
+      <div className="card-premium p-8 bg-gradient-to-br from-purple-500/10 to-transparent border-purple-500/20 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div>
+          <h4 className="font-black text-lg mb-1">💡 ¿Formato No Soportado?</h4>
+          <p className="text-xs text-slate-400">Si tienes un extracto en un formato extraño o no listado, conviértelo a Excel y súbelo seleccionando la opción <strong>Banco (Excel)</strong>.</p>
+        </div>
+      </div>
     </div>
   )
 }
