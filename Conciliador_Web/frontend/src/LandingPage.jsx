@@ -245,6 +245,80 @@ export default function LandingPage({ onLogin, onRegister, onGoogleLogin, authEr
         </div>
       </section>
 
+      {/* File Flexibility & Compatibility */}
+      <section className="max-w-6xl mx-auto px-6 py-24 border-t border-white/5" id="compatibilidad">
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div className="space-y-6 lp-animate-fadeUp">
+            <div className="font-mono text-[10px] text-[#60a5fa] uppercase tracking-[3px]">// compatibilidad sin fricción</div>
+            <h2 className="text-3xl md:text-5xl font-bold tracking-tight leading-[1.15]">
+              Subí tus archivos tal <br />
+              <span className="bg-gradient-to-r from-[#60a5fa] to-[#10b981] bg-clip-text text-transparent">como salen de tu sistema</span>
+            </h2>
+            <p className="text-[#94a3b8] font-light leading-relaxed">
+              Olvidate de las plantillas rígidas y de perder tiempo formateando columnas. Nuestro lector inteligente se adapta a tu forma de trabajar.
+            </p>
+            <div className="space-y-4">
+              <div className="flex items-start gap-4">
+                <div className="text-xl bg-[#60a5fa]/10 p-2.5 rounded-lg text-[#60a5fa] shrink-0">🤖</div>
+                <div>
+                  <h4 className="font-bold text-white text-base">Mapeo Inteligente de Columnas</h4>
+                  <p className="text-sm text-[#94a3b8] mt-1">
+                    El sistema detecta automáticamente columnas como <em>Fecha, Debe, Haber, Detalle</em> o <em>Documento</em>. Compatible con exportaciones directas de <strong>Tango, Bejerman, SAP, Xero, Colppy</strong> y más.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4">
+                <div className="text-xl bg-[#10b981]/10 p-2.5 rounded-lg text-[#10b981] shrink-0">⚡</div>
+                <div>
+                  <h4 className="font-bold text-white text-base">Mayor Contable 100% Opcional</h4>
+                  <p className="text-sm text-[#94a3b8] mt-1">
+                    ¿Solo querés listar tus movimientos bancarios o procesar las tarjetas? Podés iniciar la conciliación sin subir un archivo de Mayor. El sistema asume valores en cero automáticamente.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-start gap-4">
+                <div className="text-xl bg-[#a78bfa]/10 p-2.5 rounded-lg text-[#a78bfa] shrink-0">💳</div>
+                <div>
+                  <h4 className="font-bold text-white text-base">Soporte Multimoneda (USD/ARS)</h4>
+                  <p className="text-sm text-[#94a3b8] mt-1">
+                    Ideal para tarjetas de crédito. Ahora podés procesar sin restricciones consumos tanto en pesos como en dólares (USD). Los consumos internacionales se destacan de forma automática en el reporte.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="bg-[#141c2e] border border-white/5 rounded-3xl p-8 md:p-12 space-y-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-64 h-64 bg-[#3b82f6]/5 blur-3xl rounded-full"></div>
+            <div className="flex justify-between items-center border-b border-white/5 pb-4">
+              <span className="text-xs font-mono text-[#94a3b8]">EJEMPLO DE DETECCIÓN INTELIGENTE</span>
+              <span className="bg-emerald-500/10 text-emerald-400 text-[9px] font-bold px-2 py-0.5 rounded border border-emerald-500/20">ACTIVO</span>
+            </div>
+            
+            <div className="space-y-4">
+              <div className="bg-[#0a0e1a]/80 border border-white/5 rounded-2xl p-4 space-y-3">
+                <p className="text-xs font-mono text-[#60a5fa]">// El motor reconoce tus columnas sin importar el orden:</p>
+                <div className="grid grid-cols-4 gap-2 text-[10px] font-mono text-[#94a3b8] border-b border-white/5 pb-2">
+                  <div className="text-emerald-400 font-bold">FECHA REGISTRO</div>
+                  <div className="text-emerald-400 font-bold">OPERACIÓN Nº</div>
+                  <div className="text-emerald-400 font-bold">FONDOS INGRESADOS</div>
+                  <div className="text-emerald-400 font-bold">EGRESOS</div>
+                </div>
+                <div className="grid grid-cols-4 gap-2 text-[9px] font-mono text-[#475569]">
+                  <div>15/05/2025</div>
+                  <div>OP-9982</div>
+                  <div>$ 150.000,00</div>
+                  <div>$ 0,00</div>
+                </div>
+              </div>
+              <p className="text-xs text-[#94a3b8] leading-relaxed">
+                💡 <strong>¿Cómo funciona?</strong> No importa si tu columna se llama <em>"Debe"</em>, <em>"Ingreso"</em> o <em>"Fondos Ingresados"</em>, ni en qué orden estén posicionadas. El algoritmo de ContaFlex analiza la estructura y las palabras clave de tu planilla y hace el trabajo por vos.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Pricing */}
       <section className="max-w-6xl mx-auto px-6 py-24 border-t border-white/5" id="precios">
         <div className="text-center mb-16">
