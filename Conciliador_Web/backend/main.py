@@ -4,7 +4,7 @@ import shutil
 import tempfile
 import uuid
 import re
-from typing import List
+from typing import List, Optional
 from datetime import datetime
 
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, Depends
@@ -118,7 +118,7 @@ async def root():
 async def conciliar(
     banco: str = Form(...),
     extractos: List[UploadFile] = File(...),
-    mayores: List[UploadFile] = File(...),
+    mayores: Optional[List[UploadFile]] = File(None),
     usuario: dict = Depends(get_usuario_actual),
 ):
     logger.info(f"Conciliación iniciada por '{usuario['username']}' | banco={banco}")
@@ -134,8 +134,12 @@ async def conciliar(
     proc_dir = tempfile.mkdtemp()
     try:
         # Validar archivos
-        for f in extractos + mayores:
-            _validar_archivo(f)
+        # Filtramos None en caso de que mayores sea None
+        archivos_validar = extractos + (mayores if mayores else [])
+        for f in archivos_validar:
+            # Si el frontend manda un File vacío, el filename puede estar vacío
+            if getattr(f, "filename", ""):
+                _validar_archivo(f)
 
         # Guardar extractos
         ruta_extractos = []
@@ -147,11 +151,14 @@ async def conciliar(
 
         # Guardar mayores
         ruta_mayores = []
-        for file in mayores:
-            nombre = re.sub(r'[^\w.\-]', '_', file.filename or "mayor")
-            ruta = os.path.join(proc_dir, f"may_{nombre}")
-            await _guardar_archivo(file, ruta)
-            ruta_mayores.append(ruta)
+        if mayores:
+            for file in mayores:
+                if not getattr(file, "filename", ""):
+                    continue
+                nombre = re.sub(r'[^\w.\-]', '_', file.filename or "mayor")
+                ruta = os.path.join(proc_dir, f"may_{nombre}")
+                await _guardar_archivo(file, ruta)
+                ruta_mayores.append(ruta)
 
         # Determinar si los extractos son Excel genéricos
         def _es_excel(ruta):
@@ -194,7 +201,10 @@ async def conciliar(
         datos_comb = combinar_extractos(lista_datos)
 
         # Parsear mayores
-        movs_sis = combinar_mayores([parsear_excel(r) for r in ruta_mayores])
+        if ruta_mayores:
+            movs_sis = combinar_mayores([parsear_excel(r) for r in ruta_mayores])
+        else:
+            movs_sis = []
 
         # Conciliar
         resultado = MotorConciliacion().conciliar(datos_comb, movs_sis)

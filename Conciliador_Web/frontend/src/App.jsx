@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import axios from 'axios'
+import { GoogleOAuthProvider } from '@react-oauth/google'
 import LandingPage from './LandingPage'
 import Terminos from './Terminos'
 import Privacidad from './Privacidad'
@@ -15,6 +16,7 @@ import {
 
 // --- Config ---
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:8000"
+const GOOGLE_CLIENT_ID = "51609962772-hqrn0635b7lv45btrf15rclk27cc85u5.apps.googleusercontent.com"
 
 const BANCOS = [
   "— auto —",
@@ -151,6 +153,28 @@ export default function App() {
     return axios.post(`${API_BASE_URL}/auth/reset-password?token=${token}&nueva_pass=${newPass}`)
   }
 
+  const handleGoogleLogin = async (credential, plan) => {
+    setLoginError(null)
+    try {
+      const r = await axios.post(`${API_BASE_URL}/auth/google`, { 
+        credential, 
+        plan_solicitado: plan || 'Free' 
+      })
+      
+      // Guardamos el token antes de cualquier redirección
+      sessionStorage.setItem('token', r.data.access_token)
+      setToken(r.data.access_token)
+      setUsuario(r.data.usuario)
+      
+      // Si el backend nos devuelve un link de Mercado Pago, redirigimos
+      if (r.data.init_point) {
+        window.location.href = r.data.init_point
+      }
+    } catch (err) {
+      setLoginError(err.response?.data?.detail || "Error al iniciar sesión con Google.")
+    }
+  }
+
   const handleLogout = () => {
     sessionStorage.removeItem('token')
     setToken(null)
@@ -187,8 +211,8 @@ export default function App() {
   }
 
   const handleConciliar = async () => {
-    if (!extractos.length || !mayores.length) {
-      setError("Cargá al menos un extracto (PDF o Excel) y un mayor (Excel).")
+    if (!extractos.length) {
+      setError("Cargá al menos un extracto (PDF o Excel).")
       return
     }
     setLoading(true); setError(null)
@@ -279,7 +303,18 @@ export default function App() {
   if (!token || !usuario) {
     if (view === 'terminos') return <Terminos onBack={() => setView('dashboard')} />
     if (view === 'privacidad') return <Privacidad onBack={() => setView('dashboard')} />
-    return <LandingPage onLogin={handleLogin} onRegister={handleRegister} authError={loginError} onForgotPassword={handleForgotPassword} setView={setView} />
+    return (
+      <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+        <LandingPage 
+          onLogin={handleLogin} 
+          onRegister={handleRegister} 
+          onGoogleLogin={handleGoogleLogin}
+          authError={loginError} 
+          onForgotPassword={handleForgotPassword} 
+          setView={setView} 
+        />
+      </GoogleOAuthProvider>
+    )
   }
 
   const esAdmin = usuario?.rol === 'admin'

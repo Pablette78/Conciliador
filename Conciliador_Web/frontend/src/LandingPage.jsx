@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Lock, Check, Activity } from 'lucide-react';
+import { GoogleLogin } from '@react-oauth/google';
 
-export default function LandingPage({ onLogin, onRegister, authError, onForgotPassword, setView }) {
+export default function LandingPage({ onLogin, onRegister, onGoogleLogin, authError, onForgotPassword, setView }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [authTab, setAuthTab] = useState('login'); // 'login' | 'register' | 'forgot'
   const [successMode, setSuccessMode] = useState(false); // false | 'login' | 'registered' | 'forgot'
@@ -319,6 +320,30 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
                   {authTab === 'login' && (
                     <form onSubmit={handleLoginSubmit} className="space-y-5">
                       <h3 className="text-xl font-bold">Bienvenido de vuelta</h3>
+                      
+                      {/* Botón de Google Login */}
+                      <div className="w-full flex justify-center">
+                        <GoogleLogin
+                          onSuccess={credentialResponse => {
+                            onGoogleLogin(credentialResponse.credential, 'Free');
+                          }}
+                          onError={() => {
+                            alert('Error en el inicio de sesión con Google');
+                          }}
+                          useOneTap
+                          theme="filled_blue"
+                          shape="pill"
+                          width="356" // Ancho aproximado para el modal
+                          locale="es"
+                        />
+                      </div>
+
+                      <div className="relative flex py-2 items-center">
+                        <div className="flex-grow border-t border-white/5"></div>
+                        <span className="flex-shrink mx-4 text-[10px] text-slate-500 font-mono uppercase tracking-widest">o con tu email</span>
+                        <div className="flex-grow border-t border-white/5"></div>
+                      </div>
+
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Usuario o Email</label>
                         <input type="text" placeholder="usuario o tu@email.com"
@@ -346,6 +371,30 @@ export default function LandingPage({ onLogin, onRegister, authError, onForgotPa
                   {authTab === 'register' && (
                     <form onSubmit={handleRegisterSubmit} className="space-y-4">
                       <h3 className="text-xl font-bold">Crear cuenta</h3>
+                      
+                      {/* Botón de Google Login */}
+                      <div className="w-full flex justify-center">
+                        <GoogleLogin
+                          onSuccess={credentialResponse => {
+                            onGoogleLogin(credentialResponse.credential, regForm.plan);
+                          }}
+                          onError={() => {
+                            alert('Error en el registro con Google');
+                          }}
+                          useOneTap
+                          theme="filled_blue"
+                          shape="pill"
+                          width="356"
+                          locale="es"
+                        />
+                      </div>
+
+                      <div className="relative flex py-2 items-center">
+                        <div className="flex-grow border-t border-white/5"></div>
+                        <span className="flex-shrink mx-4 text-[10px] text-slate-500 font-mono uppercase tracking-widest">o con tu email</span>
+                        <div className="flex-grow border-t border-white/5"></div>
+                      </div>
+
                       <div className="space-y-1.5">
                         <label className="text-[10px] font-mono text-[#94a3b8] uppercase">Nombre de usuario</label>
                         <input type="text" placeholder="Ej: pablo.ponti"

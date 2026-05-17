@@ -22,6 +22,8 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 from mailer import (enviar_verificacion, enviar_notificacion_upgrade,
                     enviar_reset_password, enviar_aprobacion_usuario)
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
 
 # --- Config ---
 SECRET_KEY         = os.getenv("JWT_SECRET", "conciliador-secret-key-permanente-2024")
@@ -30,6 +32,7 @@ TOKEN_EXPIRE_HORAS = int(os.getenv("TOKEN_EXPIRE_HORAS", "24"))
 DB_PATH            = os.getenv("AUTH_DB_PATH", "./usuarios.db")
 DATABASE_URL       = os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL")
 FRONTEND_URL       = os.getenv("FRONTEND_URL", "https://contaflex.ar")
+GOOGLE_CLIENT_ID   = "51609962772-hqrn0635b7lv45btrf15rclk27cc85u5.apps.googleusercontent.com"
 
 def hash_password(password: str) -> str:
     return bcrypt.hashpw(password.encode("utf-8")[:72], bcrypt.gensalt()).decode("utf-8")
@@ -52,6 +55,10 @@ PLAN_LIMITS = {"Free": 5, "Individual": 20, "Estudio": 100}
 class LoginRequest(BaseModel):
     username: str
     password: str
+
+class GoogleLoginRequest(BaseModel):
+    credential: str
+    plan_solicitado: Optional[str] = "Free"
 
 class UsuarioCreate(BaseModel):
     username: str
@@ -321,6 +328,87 @@ async def login(data: LoginRequest):
     token = crear_token(data.username, usuario["rol"])
     return {"access_token": token, "token_type": "bearer",
             "usuario": {"username": usuario["username"], "rol": usuario["rol"]}}
+
+
+@router.post("/google")
+async def google_auth(data: GoogleLoginRequest):
+    try:
+        # Verificar token con Google
+        idinfo = id_token.verify_oauth2_token(data.credential, google_requests.Request(), GOOGLE_CLIENT_ID)
+        
+        email = idinfo['email']
+        # Usamos el email como username para simplificar
+        
+        with get_db() as conn:
+            cur = _cursor(conn)
+            # Buscar por email o username
+            cur.execute(f"SELECT * FROM usuarios WHERE email = {PL} OR username = {PL}", (email, email))
+            usuario = cur.fetchone()
+            
+            if not usuario:
+                # --- REGISTRO DE NUEVO USUARIO VIA GOOGLE ---
+                from payments import crear_preapproval_usuario, PLAN_IDS
+                
+                # Generar password aleatoria (no se usará, pero cumple el NOT NULL)
+                random_pass = secrets.token_urlsafe(16)
+                
+                # Insertar usuario
+                # Nota: activo=1 y email_verificado=1 porque Google ya validó la identidad
+                cur.execute(
+                    f"INSERT INTO usuarios "
+                    f"(username, password_h, email, rol, activo, creado_en, plan, limite_mensual, "
+                    f"email_verificado, plan_pendiente) "
+                    f"VALUES ({PL},{PL},{PL},{PL},1,{PL},{PL},{PL},1,{PL}) RETURNING id",
+                    (email, hash_password(random_pass), email, "usuario", 
+                     datetime.utcnow().isoformat(), "Free", 5, 
+                     data.plan_solicitado if data.plan_solicitado != "Free" else None)
+                )
+                
+                # Obtener ID para Mercado Pago
+                if DATABASE_URL:
+                    new_id = cur.fetchone()["id"]
+                else:
+                    new_id = cur.lastrowid
+                
+                # Si eligió un plan pago, generamos el link de MP ahora mismo
+                init_point = None
+                if data.plan_solicitado in PLAN_IDS:
+                    try:
+                        res_mp = crear_preapproval_usuario(new_id, email, data.plan_solicitado)
+                        init_point = res_mp["init_point"]
+                        cur.execute(f"UPDATE usuarios SET mp_preapproval_id={PL} WHERE id={PL}", 
+                                    (res_mp["preapproval_id"], new_id))
+                    except Exception:
+                        # Si falla MP, el usuario igual queda creado como Free
+                        pass
+                
+                token = crear_token(email, "usuario")
+                return {
+                    "access_token": token, 
+                    "token_type": "bearer",
+                    "usuario": {"username": email, "rol": "usuario"},
+                    "init_point": init_point # El frontend usará esto para redirigir
+                }
+            
+            # --- LOGIN DE USUARIO EXISTENTE ---
+            is_activo = usuario.get("activo")
+            if is_activo is not None and not is_activo:
+                raise HTTPException(status_code=403, detail="Usuario desactivado.")
+                
+            cur.execute(f"UPDATE usuarios SET ultimo_login={PL} WHERE id={PL}", 
+                        (datetime.utcnow().isoformat(), usuario["id"]))
+            
+            token = crear_token(usuario["username"], usuario["rol"])
+            return {
+                "access_token": token, 
+                "token_type": "bearer",
+                "usuario": {"username": usuario["username"], "rol": usuario["rol"]}
+            }
+            
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Token de Google inválido.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/me")
