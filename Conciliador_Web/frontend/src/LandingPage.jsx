@@ -55,8 +55,11 @@ export default function LandingPage({ onLogin, onRegister, onGoogleLogin, authEr
     <div className="bg-[#0a0e1a] text-[#f1f5f9] min-h-screen font-landing overflow-x-hidden">
       {/* Navigation */}
       <nav className="fixed top-0 left-0 right-0 z-[100] flex items-center justify-between px-6 md:px-12 h-[68px] bg-[#0a0e1a]/85 backdrop-blur-xl border-b border-white/5">
-        <div className="font-mono text-xl font-medium tracking-tight">
-          Conta<span className="text-[#60a5fa]">Flex</span>
+        <div className="flex items-center space-x-3 select-none">
+          <img src="/logo.svg" alt="ContaFlex Logo" className="w-8 h-8 object-contain" />
+          <div className="font-mono text-xl font-medium tracking-tight">
+            Conta<span className="text-[#60a5fa]">Flex</span>
+          </div>
         </div>
         <div className="hidden md:flex gap-8 items-center">
           <a href="#features" className="text-sm text-[#94a3b8] hover:text-white transition-colors">Funciones</a>
@@ -361,7 +364,10 @@ export default function LandingPage({ onLogin, onRegister, onGoogleLogin, authEr
 
       {/* CTA Footer */}
       <footer className="border-t border-white/5 py-12 px-6 flex flex-col md:flex-row justify-between items-center gap-6 max-w-6xl mx-auto">
-        <div className="font-mono text-lg font-medium">Conta<span>Flex</span></div>
+        <div className="flex items-center space-x-2 select-none">
+          <img src="/logo.svg" alt="ContaFlex Logo" className="w-6 h-6 object-contain" />
+          <div className="font-mono text-lg font-medium">Conta<span>Flex</span></div>
+        </div>
         <p className="text-xs text-[#94a3b8]">© 2025 ContaFlex. Hecho en Argentina 🇦🇷</p>
         <div className="flex gap-6">
           <button onClick={() => setView('terminos')} className="text-xs text-[#94a3b8] hover:text-[#60a5fa] bg-transparent border-none cursor-pointer">Términos</button>
