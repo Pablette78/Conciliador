@@ -118,7 +118,7 @@ async def root():
 async def conciliar(
     banco: str = Form(...),
     extractos: List[UploadFile] = File(...),
-    mayores: Optional[List[UploadFile]] = File(None),
+    mayores: List[UploadFile] = File(default=[]),
     usuario: dict = Depends(get_usuario_actual),
 ):
     logger.info(f"Conciliación iniciada por '{usuario['username']}' | banco={banco}")
@@ -134,8 +134,7 @@ async def conciliar(
     proc_dir = tempfile.mkdtemp()
     try:
         # Validar archivos
-        # Filtramos None en caso de que mayores sea None
-        archivos_validar = extractos + (mayores if mayores else [])
+        archivos_validar = extractos + mayores
         for f in archivos_validar:
             # Si el frontend manda un File vacío, el filename puede estar vacío
             if getattr(f, "filename", ""):
@@ -151,14 +150,13 @@ async def conciliar(
 
         # Guardar mayores
         ruta_mayores = []
-        if mayores:
-            for file in mayores:
-                if not getattr(file, "filename", ""):
-                    continue
-                nombre = re.sub(r'[^\w.\-]', '_', file.filename or "mayor")
-                ruta = os.path.join(proc_dir, f"may_{nombre}")
-                await _guardar_archivo(file, ruta)
-                ruta_mayores.append(ruta)
+        for file in mayores:
+            if not getattr(file, "filename", ""):
+                continue
+            nombre = re.sub(r'[^\w.\-]', '_', file.filename or "mayor")
+            ruta = os.path.join(proc_dir, f"may_{nombre}")
+            await _guardar_archivo(file, ruta)
+            ruta_mayores.append(ruta)
 
         # Determinar si los extractos son Excel genéricos
         def _es_excel(ruta):
