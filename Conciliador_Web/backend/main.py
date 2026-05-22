@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import uuid
 import re
+import asyncio
 from typing import List, Optional
 from datetime import datetime
 
@@ -33,6 +34,48 @@ app = FastAPI(title="Conciliador Bancario API", version="2.0")
 async def startup():
     init_db()
     logger.info("Base de datos de usuarios inicializada.")
+    # Iniciar worker de notificaciones de base de datos (solo si hay Postgres)
+    if os.getenv("DATABASE_URL") or os.getenv("POSTGRES_URL"):
+        asyncio.create_task(_worker_notificaciones())
+        logger.info("Worker de notificaciones de BD iniciado.")
+
+
+async def _worker_notificaciones():
+    """Tarea en segundo plano: cada 60 s lee cola_notificaciones y envia emails al admin."""
+    from auth import get_db, _cursor
+    from mailer import enviar_notificacion_cambio_db
+    import asyncio
+
+    while True:
+        await asyncio.sleep(60)  # Esperar 60 segundos entre cada ciclo
+        try:
+            with get_db() as conn:
+                cur = _cursor(conn)
+                cur.execute(
+                    "SELECT id, evento, username, detalle, creado_en "
+                    "FROM cola_notificaciones WHERE enviado = FALSE ORDER BY creado_en LIMIT 20"
+                )
+                pendientes = cur.fetchall()
+
+                for row in pendientes:
+                    try:
+                        d = dict(row)
+                        ok = enviar_notificacion_cambio_db(
+                            evento=d["evento"],
+                            username=d["username"],
+                            detalle=d["detalle"] or "",
+                            creado_en=str(d["creado_en"]),
+                        )
+                        if ok:
+                            cur.execute(
+                                "UPDATE cola_notificaciones SET enviado = TRUE WHERE id = %s",
+                                (d["id"],)
+                            )
+                    except Exception as e:
+                        logger.error(f"[NOTIF_WORKER] Error enviando notif id={d['id']}: {e}")
+
+        except Exception as e:
+            logger.error(f"[NOTIF_WORKER] Error leyendo cola de notificaciones: {e}")
 
 # Registrar rutas
 app.include_router(auth_router)

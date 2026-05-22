@@ -21,7 +21,8 @@ import bcrypt
 from jose import JWTError, jwt
 from pydantic import BaseModel
 from mailer import (enviar_verificacion, enviar_notificacion_upgrade,
-                    enviar_reset_password, enviar_aprobacion_usuario)
+                    enviar_reset_password, enviar_aprobacion_usuario,
+                    enviar_notificacion_cambio_db)
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
@@ -155,6 +156,73 @@ def init_db() -> None:
                     token_aprobacion_suscripcion TEXT
                 )
             """)
+        # --- Tabla de auditoría: cola de notificaciones para el admin ---
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS cola_notificaciones (
+                    id          SERIAL PRIMARY KEY,
+                    evento      TEXT NOT NULL,
+                    username    TEXT NOT NULL,
+                    detalle     TEXT,
+                    creado_en   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    enviado     BOOLEAN NOT NULL DEFAULT FALSE
+                )
+            """)
+
+            # --- Función PL/pgSQL que escribe en la cola ---
+            cur.execute("""
+                CREATE OR REPLACE FUNCTION fn_notificar_usuario()
+                RETURNS TRIGGER AS $$
+                BEGIN
+                    IF TG_OP = 'INSERT' THEN
+                        INSERT INTO cola_notificaciones (evento, username, detalle)
+                        VALUES ('ALTA', NEW.username,
+                                'Email: ' || COALESCE(NEW.email, '—') ||
+                                ' | Plan: ' || COALESCE(NEW.plan, 'Free'));
+
+                    ELSIF TG_OP = 'UPDATE' THEN
+                        IF OLD.plan IS DISTINCT FROM NEW.plan THEN
+                            INSERT INTO cola_notificaciones (evento, username, detalle)
+                            VALUES ('CAMBIO_PLAN', NEW.username,
+                                    'Plan anterior: ' || COALESCE(OLD.plan, '—') ||
+                                    ' → Plan nuevo: ' || COALESCE(NEW.plan, '—'));
+                        END IF;
+                        IF OLD.activo IS DISTINCT FROM NEW.activo AND NEW.activo = 0 THEN
+                            INSERT INTO cola_notificaciones (evento, username, detalle)
+                            VALUES ('DESACTIVACION', NEW.username,
+                                    'Email: ' || COALESCE(NEW.email, '—'));
+                        END IF;
+
+                    ELSIF TG_OP = 'DELETE' THEN
+                        INSERT INTO cola_notificaciones (evento, username, detalle)
+                        VALUES ('BAJA', OLD.username,
+                                'Email: ' || COALESCE(OLD.email, '—') ||
+                                ' | Plan que tenía: ' || COALESCE(OLD.plan, 'Free'));
+                    END IF;
+                    RETURN NULL;
+                END;
+                $$ LANGUAGE plpgsql;
+            """)
+
+            # --- Triggers sobre la tabla usuarios ---
+            cur.execute("""
+                DROP TRIGGER IF EXISTS tg_notificar_insert ON usuarios;
+                CREATE TRIGGER tg_notificar_insert
+                    AFTER INSERT ON usuarios
+                    FOR EACH ROW EXECUTE FUNCTION fn_notificar_usuario();
+            """)
+            cur.execute("""
+                DROP TRIGGER IF EXISTS tg_notificar_update ON usuarios;
+                CREATE TRIGGER tg_notificar_update
+                    AFTER UPDATE ON usuarios
+                    FOR EACH ROW EXECUTE FUNCTION fn_notificar_usuario();
+            """)
+            cur.execute("""
+                DROP TRIGGER IF EXISTS tg_notificar_delete ON usuarios;
+                CREATE TRIGGER tg_notificar_delete
+                    AFTER DELETE ON usuarios
+                    FOR EACH ROW EXECUTE FUNCTION fn_notificar_usuario();
+            """)
+
             for col, typedef in [
                 ("email",                        "TEXT"),
                 ("plan",                         "TEXT DEFAULT 'Free'"),

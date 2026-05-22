@@ -111,3 +111,36 @@ def enviar_reset_password(email: str, token: str) -> bool:
       {_FOOTER}
     </div>"""
     return send_email(email, "Recupera tu contrasena - ContaFlex", html)
+
+
+_ICONOS_EVENTO = {
+    "ALTA":        ("🟢 Alta de usuario",         "#10b981"),
+    "CAMBIO_PLAN": ("🔵 Cambio de plan",           "#3b82f6"),
+    "DESACTIVACION":("🟡 Desactivación de usuario","#f59e0b"),
+    "BAJA":        ("🔴 Baja de usuario",          "#ef4444"),
+}
+
+def enviar_notificacion_cambio_db(evento: str, username: str, detalle: str, creado_en: str) -> bool:
+    """Notifica al admin cada vez que Postgres detecta un cambio en la tabla usuarios."""
+    titulo, color = _ICONOS_EVENTO.get(evento, ("⚪ Evento desconocido", "#94a3b8"))
+    html = f"""
+    <div style="{_WRAP}">
+      <h2 style="color:{color};">{titulo}</h2>
+      <table style="width:100%;background:#141c2e;border-radius:8px;padding:20px;margin:20px 0;">
+        <tr><td style="color:#94a3b8;padding:8px 0;width:35%;">Tipo de evento:</td>
+            <td style="font-weight:bold;color:{color};">{evento}</td></tr>
+        <tr><td style="color:#94a3b8;padding:8px 0;">Usuario:</td>
+            <td style="font-weight:bold;color:#ffffff;">{username}</td></tr>
+        <tr><td style="color:#94a3b8;padding:8px 0;">Detalle:</td>
+            <td style="color:#ffffff;">{detalle}</td></tr>
+        <tr><td style="color:#94a3b8;padding:8px 0;">Fecha/hora (UTC):</td>
+            <td style="color:#94a3b8;font-size:12px;">{creado_en}</td></tr>
+      </table>
+      {_FOOTER}
+    </div>"""
+    return send_email(
+        ADMIN_EMAIL,
+        f"[ContaFlex DB] {titulo}: {username}",
+        html
+    )
+
