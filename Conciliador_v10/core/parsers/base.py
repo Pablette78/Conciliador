@@ -36,7 +36,7 @@ class BaseParser(ABC):
         e inglés (1,234.56), con o sin signo negativo."""
         if not texto or not texto.strip(): return 0.0
         s = texto.strip().replace('$', '').replace(' ', '')
-        s = s.lstrip('-')  # abs() al final se encarga del signo
+        s = s.strip('-')  # abs() al final se encarga del signo
 
         if ',' in s and '.' in s:
             if s.rindex(',') > s.rindex('.'):
