@@ -2,6 +2,17 @@ import React, { useState } from 'react';
 import { Lock, Check, Activity } from 'lucide-react';
 import { GoogleLogin } from '@react-oauth/google';
 
+const WHATSAPP_URL = "https://wa.me/5491158447067";
+
+function WhatsAppIcon({ size = 28 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-1.732-.867-2.866-1.546-4.005-3.504-.302-.521.302-.484.864-1.61.099-.198.05-.371-.05-.52-.099-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.064 2.875 1.213 3.074.149.198 2.057 3.146 4.99 4.287 2.932 1.14 2.932.76 3.46.71.528-.05 1.758-.718 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.297-.198-.595-.347z"/>
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.997.595 3.86 1.6 5.413L2 22l4.78-1.692c1.473.806 3.16 1.267 4.94 1.267 5.46 0 9.91-4.45 9.91-9.91C21.63 6.45 17.5 2 12.04 2zm5.793 14.21c-.246.694-1.444 1.317-1.97 1.367-.527.05-1.05.099-3.86-.794-3.243-1.03-5.327-4.357-5.484-4.557-.158-.198-1.296-1.72-1.296-3.282 0-1.562.793-2.33 1.075-2.65.282-.32.612-.396.815-.396l.595.01c.198.01.464-.075.728.554.272.65.916 2.207.99 2.355.075.149.124.322.025.52-.099.198-.149.322-.297.495-.149.174-.31.396-.446.534-.149.149-.31.31-.124.61.182.297 1.04 1.71 2.23 2.766 1.533 1.367 2.83 1.794 3.231 1.992.397.198.62.165.84-.06.272-.28.594-.743.916-1.114.223-.25.495-.297.842-.173.347.124 2.18 1.025 2.55 1.213.372.198.62.297.713.446.099.149.099.86-.148 1.555z"/>
+    </svg>
+  );
+}
+
 export default function LandingPage({ onLogin, onRegister, onGoogleLogin, authError, onForgotPassword, setView }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [authTab, setAuthTab] = useState('login'); // 'login' | 'register' | 'forgot'
@@ -18,6 +29,13 @@ export default function LandingPage({ onLogin, onRegister, onGoogleLogin, authEr
     setModalOpen(true);
     setSuccessMode(false);
   };
+
+  // Soporta /login y /register como rutas que abren el modal en la landing
+  React.useEffect(() => {
+    const path = window.location.pathname;
+    if (path === '/login') openModal('login');
+    else if (path === '/register') openModal('register');
+  }, []);
 
   const handleLoginSubmit = async (e) => {
     e.preventDefault();
@@ -369,11 +387,25 @@ export default function LandingPage({ onLogin, onRegister, onGoogleLogin, authEr
           <div className="font-mono text-lg font-medium">Conta<span>Flex</span></div>
         </div>
         <p className="text-xs text-[#94a3b8]">© 2025 ContaFlex. Hecho en Argentina 🇦🇷</p>
-        <div className="flex gap-6">
+        <div className="flex gap-6 items-center">
           <button onClick={() => setView('terminos')} className="text-xs text-[#94a3b8] hover:text-[#60a5fa] bg-transparent border-none cursor-pointer">Términos</button>
           <button onClick={() => setView('privacidad')} className="text-xs text-[#94a3b8] hover:text-[#60a5fa] bg-transparent border-none cursor-pointer">Privacidad</button>
+          <a href={WHATSAPP_URL} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-xs text-[#94a3b8] hover:text-[#25d366] transition-colors">
+            <WhatsAppIcon size={14} /> WhatsApp
+          </a>
         </div>
       </footer>
+
+      {/* Botón flotante de WhatsApp */}
+      <a
+        href={WHATSAPP_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Chatear por WhatsApp"
+        className="fixed bottom-6 right-6 z-[150] w-14 h-14 rounded-full bg-[#25d366] hover:bg-[#1ebe5a] text-white flex items-center justify-center shadow-lg shadow-black/30 transition-all hover:scale-110"
+      >
+        <WhatsAppIcon size={28} />
+      </a>
 
       {/* Auth Modal */}
       {modalOpen && (
