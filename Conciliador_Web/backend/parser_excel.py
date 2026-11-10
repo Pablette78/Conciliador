@@ -49,35 +49,59 @@ def _leer_hojas_xlsx(ruta):
 def _buscar_hoja_mayor(hojas):
     """Busca la hoja que contenga los movimientos del mayor"""
     for nombre, filas in hojas.items():
-        for fila in filas[:5]:
+        for fila in filas[:10]:
             textos = ' '.join(str(c).upper() if c else '' for c in fila)
             if ('FECHA' in textos and 'DEBE' in textos) or \
                ('FECHA' in textos and 'HABER' in textos) or \
-               ('DOCUMENTO' in textos):
+               ('DOCUMENTO' in textos) or \
+               ('ASIENTO' in textos):
                 return nombre
     return max(hojas, key=lambda n: len(hojas[n]))
 
 
 def _mapear_columnas(fila):
-    """Identifica qué columna corresponde a cada campo"""
+    """Identifica qué columna corresponde a cada campo con mayor precisión contable"""
     col_map = {}
     for col_idx, valor in enumerate(fila):
         texto = str(valor).upper().strip() if valor else ''
+        if not texto:
+            continue
+
         if 'FECHA' in texto and 'fecha' not in col_map:
             col_map['fecha'] = col_idx
-        if ('DOCUMENTO' in texto or texto == 'DOC') and 'documento' not in col_map:
+            continue
+
+        # Documento / Nro de Asiento / Comprobante
+        if any(x in texto for x in ['DOCUMENTO', 'DOC', 'NRO ASIENTO', 'ASIENTO', 'COMPROBANTE', 'NRO COMP']) and 'documento' not in col_map:
             col_map['documento'] = col_idx
-        if any(x in texto for x in ['DESCRIPCI', 'CUENTA', 'CONCEPTO', 'DETALLE']):
-            if 'descripcion' not in col_map:
-                col_map['descripcion'] = col_idx
-        if texto == 'DETALLE' and 'detalle' not in col_map:
+            continue
+
+        # Referencia / Contraparte / Beneficiario / Cliente / Proveedor
+        if any(x in texto for x in ['REFERENCIA', 'BENEFICIARIO', 'CLIENTE', 'PROVEEDOR', 'CONTRAPARTE', 'DESTINATARIO']) and 'referencia' not in col_map:
+            col_map['referencia'] = col_idx
+            continue
+
+        # Descripción / Concepto del movimiento
+        if any(x in texto for x in ['DESCRIPCI', 'CONCEPTO']) and 'descripcion' not in col_map:
+            col_map['descripcion'] = col_idx
+            continue
+
+        if 'DETALLE' in texto and 'detalle' not in col_map:
             col_map['detalle'] = col_idx
-        if any(x in texto for x in ['OPERACI']):
-            if 'operacion' not in col_map:
-                col_map['operacion'] = col_idx
-        if 'RAZON SOCIAL' in texto or 'ACLARACION' in texto:
-            if 'razon_social' not in col_map:
-                col_map['razon_social'] = col_idx
+            continue
+
+        if any(x in texto for x in ['OPERACI']) and 'operacion' not in col_map:
+            col_map['operacion'] = col_idx
+            continue
+
+        if ('RAZON SOCIAL' in texto or 'ACLARACION' in texto or 'TITULAR' in texto) and 'razon_social' not in col_map:
+            col_map['razon_social'] = col_idx
+            continue
+
+        if ('CUENTA' in texto or texto == 'CTA' or 'NRO CTA' in texto) and 'cuenta' not in col_map:
+            col_map['cuenta'] = col_idx
+            continue
+
         # Columna de plata que ENTRA (Debe, Ing., Ingreso, Crédito, etc.)
         NOMBRES_ENTRADA = (
             'DEBE', 'ING.', 'ING', 'INGRESO', 'INGRESOS',
@@ -85,6 +109,8 @@ def _mapear_columnas(fila):
         )
         if texto in NOMBRES_ENTRADA and 'debe' not in col_map:
             col_map['debe'] = col_idx
+            continue
+
         # Columna de plata que SALE (Haber, Egr., Egreso, Débito, etc.)
         NOMBRES_SALIDA = (
             'HABER', 'EGR.', 'EGR', 'EGRESO', 'EGRESOS',
@@ -92,8 +118,12 @@ def _mapear_columnas(fila):
         )
         if texto in NOMBRES_SALIDA and 'haber' not in col_map:
             col_map['haber'] = col_idx
+            continue
+
         if 'SALDO' in texto and 'saldo' not in col_map:
             col_map['saldo'] = col_idx
+            continue
+
     return col_map
 
 
@@ -131,10 +161,11 @@ def parsear_excel(ruta_excel):
     # Encontrar fila de encabezados
     header_row_idx = None
     col_map = {}
-    for idx, fila in enumerate(filas[:10]):
-        col_map = _mapear_columnas(fila)
-        if 'fecha' in col_map and ('debe' in col_map or 'haber' in col_map):
+    for idx, fila in enumerate(filas[:15]):
+        map_temp = _mapear_columnas(fila)
+        if 'fecha' in map_temp and ('debe' in map_temp or 'haber' in map_temp):
             header_row_idx = idx
+            col_map = map_temp
             break
 
     if header_row_idx is None:
@@ -142,6 +173,16 @@ def parsear_excel(ruta_excel):
             f"No se encontraron encabezados válidos en la hoja '{nombre_hoja}'.\n"
             f"El archivo debe tener columnas: Fecha, Debe, Haber"
         )
+
+    # Identificar si hay alguna razón social o empresa en los metadatos de las primeras filas
+    empresa_propia = ""
+    for f_meta in filas[:header_row_idx]:
+        for c_val in f_meta:
+            if c_val and any(term in str(c_val).upper() for term in ['S.A', 'SA', 'SRL', 'S.R.L']):
+                empresa_propia = str(c_val).upper().strip()
+                break
+        if empresa_propia:
+            break
 
     movimientos = []
     for fila in filas[header_row_idx + 1:]:
@@ -151,14 +192,13 @@ def parsear_excel(ruta_excel):
 
         # Convertir fecha string a datetime
         if isinstance(fecha, str):
-            for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y'):
+            for fmt in ('%d/%m/%Y', '%Y-%m-%d', '%d-%m-%Y', '%Y/%m/%d'):
                 try:
                     fecha = datetime.strptime(fecha.strip(), fmt)
                     break
                 except ValueError:
                     continue
 
-        # xlrd puede devolver float para fechas mal leídas
         if isinstance(fecha, float):
             try:
                 import xlrd
@@ -179,27 +219,39 @@ def parsear_excel(ruta_excel):
         except (ValueError, TypeError):
             continue
 
-        doc = str(_obtener_valor(fila, col_map, 'documento', ''))
-        desc = str(_obtener_valor(fila, col_map, 'descripcion', ''))
-        detalle = str(_obtener_valor(fila, col_map, 'detalle', ''))
-        razon = str(_obtener_valor(fila, col_map, 'razon_social', ''))
-        operacion = str(_obtener_valor(fila, col_map, 'operacion', ''))
-
-        # Combinar detalle con razón social si existe
-        if razon and razon != detalle:
-            detalle = f"{detalle} - {razon}".strip(' -')
-
-        if 'SALDO INICIAL' in desc.upper() or 'SALDO INICIAL' in doc.upper():
+        if debe == 0 and haber == 0:
             continue
 
-        if debe == 0 and haber == 0:
+        doc = str(_obtener_valor(fila, col_map, 'documento', '')).strip()
+        desc = str(_obtener_valor(fila, col_map, 'descripcion', '')).strip()
+        detalle = str(_obtener_valor(fila, col_map, 'detalle', '')).strip()
+        referencia_col = str(_obtener_valor(fila, col_map, 'referencia', '')).strip()
+        razon = str(_obtener_valor(fila, col_map, 'razon_social', '')).strip()
+        operacion = str(_obtener_valor(fila, col_map, 'operacion', '')).strip()
+
+        # Determinar contraparte real (tercero / cliente / proveedor)
+        contraparte = ""
+        if referencia_col:
+            contraparte = referencia_col
+        elif detalle:
+            contraparte = detalle
+        elif razon and (not empresa_propia or razon.upper() not in empresa_propia):
+            contraparte = razon
+
+        # Concepto legible (evitar poner el número de cuenta contable como concepto)
+        concepto_final = desc or operacion or doc or "Movimiento Sistema"
+
+        # Referencia o número de comprobante/asiento
+        ref_final = doc or operacion or ""
+
+        if 'SALDO INICIAL' in concepto_final.upper() or 'SALDO INICIAL' in ref_final.upper():
             continue
 
         movimientos.append(Movimiento(
             fecha=fecha,
-            referencia=doc.strip() or operacion.strip(),
-            concepto=desc.strip(),
-            descripcion=detalle.strip(),
+            referencia=ref_final,
+            concepto=concepto_final,
+            descripcion=contraparte,
             debito=debe,
             credito=haber,
             tipo='SISTEMA'
